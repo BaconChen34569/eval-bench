@@ -197,34 +197,6 @@ async function chatOnce(
   }
 }
 
-/** 环境里没有配置时返回 null，让离线评测流程能继续跑。 */
-export function tryConfigFromEnv(
-  env: Record<string, string | undefined>,
-  prefix = "LLM",
-): LlmConfig | null {
-  const baseUrl = readEnv(env, `${prefix}_BASE_URL`);
-  const apiKey = readEnv(env, `${prefix}_API_KEY`);
-  const model = readEnv(env, `${prefix}_MODEL`);
-  if (!baseUrl || !apiKey || !model) return null;
-  return buildLlmConfig(env, prefix);
-}
-
-/** 从环境变量读取配置，缺失时给出明确提示而不是静默失败。 */
-export function configFromEnv(
-  env: Record<string, string | undefined>,
-  prefix = "LLM",
-): LlmConfig {
-  const baseUrl = readEnv(env, `${prefix}_BASE_URL`);
-  const apiKey = readEnv(env, `${prefix}_API_KEY`);
-  const model = readEnv(env, `${prefix}_MODEL`);
-  if (!baseUrl || !apiKey || !model) {
-    throw new Error(
-      `缺少 ${prefix} 配置，需要 ${prefix}_BASE_URL / ${prefix}_API_KEY / ${prefix}_MODEL 三个环境变量`,
-    );
-  }
-  return buildLlmConfig(env, prefix);
-}
-
 /** 空字符串和纯空格都当作没填，避免 .env 里留空占位时被当成已配置。 */
 function readEnv(
   env: Record<string, string | undefined>,
