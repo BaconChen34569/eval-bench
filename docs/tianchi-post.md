@@ -109,7 +109,7 @@
 - **成本口径**：点「成本怎么算的？」能展开一张表，看到缓存命中输入 / 未命中输入 / 输出各多少 token，以及 agent 和 judge 两次调用都计入了成本
 - **数据视图**：导航右上角「叙事 / 数据」切换，数据视图是密集表格——策略总览、运行记录、胜负矩阵、逐题明细（可按题号或题干筛选）、迭代阶梯
 - **数据导出**：逐题结果 CSV（22 题 × 3 策略 = 66 行）、策略总览 CSV、迭代阶梯 CSV、原始 report.json，CSV 可直接进 Excel
-- **源码下载**：站点「复现命令」那一节可以直接下载完整源码包（评测流水线 + 评测集 + 语料脚本 + 站点源码），**不需要注册、不需要账号、不需要密钥**，解压就能跑
+- **源码下载**：整套评测流水线、22 题评测集、语料脚本和站点源码都在 GitHub 上开源（MIT 许可），clone 或直接下 Code → Download ZIP 即可，**不需要注册、不需要账号、不需要密钥**
 - **深色模式**：右上角「自动 / 浅 / 深」，刷新后仍保持
 - **复现命令**：一条命令跑完整套评测，换成自己的仓库只需要改两处路径
 
@@ -138,13 +138,13 @@
 
 在线体验版：打开站点 → 看三种切分策略的检索对比 → 点开任意一道题看逐题检索台（同时能看到三种策略在这道题上的并排对比）→ 看失败归因 → 看 judge 自检结果 → 看「工具迭代史」这一节的五轮阶梯 →（想自己抠数字的话）切到「数据」视图逐题筛选，或直接把 CSV / JSON 下载走。
 
-**想要代码的话：站点「复现命令」那一节有一个「下载源码包」按钮**，点开就是 `eval-bench-source.zip`（约 500 KB），里面是完整的评测流水线、22 题评测集、语料拉取脚本和站点源码。解压后**不需要注册、不需要账号、不需要 API 密钥**，只要装个 Node.js 22.13 以上就能跑出和站点一模一样的检索层数字（检索层完全离线、不花钱）。
+**想要代码的话：整个项目都开在 GitHub 上** —— https://github.com/BaconChen34569/eval-bench ，MIT 许可。里面是完整的评测流水线、22 题评测集、语料拉取脚本和站点源码。**不需要注册、不需要账号、不需要 API 密钥**，装个 Node.js 22.13 以上就能跑出和站点一模一样的检索层数字（检索层完全离线、不花钱）。
 
 如果你想在自己身上跑一遍：
 
 ```bash
-# 0. 拿到代码（从站点下载 eval-bench-source.zip 后解压）
-cd eval-bench
+# 0. 拿到代码
+git clone https://github.com/BaconChen34569/eval-bench.git && cd eval-bench
 
 # 1. 拿到被测仓库（这里以 Flask 3.1.3 为例）
 bash corpus/fetch.sh
@@ -196,8 +196,7 @@ cd ../site && npm run dev
 
 **⑤ 最终产物**：
 - 在线站点：https://copilot-eval-bench-fzlro45ljfz.qoder.zone
-- **开源仓库（MIT 许可，可直接 clone）**：https://github.com/BaconChen34569/eval-bench
-- **源码包（免注册直接下载）**：https://copilot-eval-bench-fzlro45ljfz.qoder.zone/eval-bench-source.zip —— 解压即含评测流水线 + 评测集 + 语料脚本 + 站点源码
+- **开源仓库（MIT 许可，可直接 clone）**：https://github.com/BaconChen34569/eval-bench —— 评测流水线 + 22 题评测集 + 语料脚本 + 站点源码
 - 评测流水线源码：`harness/`（TypeScript，零运行时依赖，Node 原生跑）
 - 评测集：`harness/datasets/`（22 题，每题带人工标注的证据位置与参考答案）
 - 复现脚本：`corpus/fetch.sh`
@@ -210,7 +209,7 @@ cd ../site && npm run dev
 - [ ] 补齐 `{{姓名}}`、`{{学校}}`
 - [ ] 插入 5 组 Qoder 过程截图（第 ① ② ④ 步需要你自己截 IDE 界面，第 ⑤ 步用 `site/shots/` 的实拍图）
 - [ ] 确认站点是**公开可访问**（已确认：https://copilot-eval-bench-fzlro45ljfz.qoder.zone 无需登录）
-- [ ] 点一次站点的「下载源码包」按钮，确认能下到 `eval-bench-source.zip` 并正常解压
+- [ ] 确认 GitHub 仓库是公开的（已确认：https://github.com/BaconChen34569/eval-bench 无需登录可读），且站点「怎么复现」一节的按钮指向它
 - [ ] 检查：有没有把 API Key 写进任何截图或代码里（密钥只存在 `harness/.env`，已被 .gitignore 忽略）
 - [ ] 完成学生实名认证 + 阿里云大学生认证（关系到能不能拿奖）
 - [ ] 可选：把 corpus 换成你自己的课设仓库，评测流程一行都不用改

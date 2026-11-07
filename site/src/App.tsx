@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Download } from "lucide-react";
+import { GitBranch } from "lucide-react";
 
 import {
   CATEGORY_LABEL,
@@ -40,6 +40,8 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
+
+const REPO_URL = "https://github.com/BaconChen34569/eval-bench";
 
 const best = strategies.reduce((a, b) => (b.mrr > a.mrr ? b : a));
 const repoLines = strategies[0]?.totalRepoLines ?? 0;
@@ -1005,24 +1007,28 @@ export default function App() {
             <CardHeader>
               <CardTitle className="text-base">把代码拿走，本地跑一遍</CardTitle>
               <CardDescription>
-                评测流水线和站点源码都在下面这个包里。解压后不需要注册、不需要密钥，
-                几分钟就能跑出和本页一模一样的检索层数字。
+                评测流水线和站点源码都开在 GitHub 上（MIT 许可）。clone 之后不需要注册、
+                不需要密钥，几分钟就能跑出和本页一模一样的检索层数字。
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <Button asChild size="lg" className="w-fit">
-                <a href="/eval-bench-source.zip" download>
-                  <Download className="size-4" />
-                  下载源码包（eval-bench-source.zip）
+                <a
+                  href={REPO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <GitBranch className="size-4" />
+                  打开 GitHub 仓库（eval-bench）
                 </a>
               </Button>
               <div className="grid gap-3 sm:grid-cols-3">
                 {[
                   {
                     step: "1",
-                    title: "解压后先拉语料",
+                    title: "clone 下来先拉语料",
                     detail:
-                      "bash corpus/fetch.sh 拉取 Flask 3.1.3 等四个固定版本的源码包，约 3 MB，只要 bash + curl + tar，不用装 Python。",
+                      "git clone https://github.com/BaconChen34569/eval-bench.git && cd eval-bench && bash corpus/fetch.sh —— 拉 Flask 3.1.3 等四个固定版本的源码包，约 3 MB，只要 bash + curl + tar，不用装 Python。",
                   },
                   {
                     step: "2",
@@ -1053,7 +1059,7 @@ export default function App() {
               <p className="text-sm text-muted-foreground">
                 需要 Node.js 22.13 以上（用 <code className="font-mono text-xs">--experimental-strip-types</code>{" "}
                 直接跑 TypeScript，harness 本身零第三方依赖，不需要 npm install）。
-                包里还有一份「开始这里.md」，写了怎么换成你自己的课设仓库。
+                不想装 git 的话，仓库页的 Code → Download ZIP 拿到的永远是最新快照。
               </p>
             </CardContent>
           </Card>
@@ -1078,7 +1084,8 @@ node --experimental-strip-types src/cli.ts ladder \\
 #    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`}</code>
               </pre>
               <p className="mt-4 text-sm text-muted-foreground">
-                评测集、检索器和切分策略全部开源可查，跑出来的每个数字都能在几分钟内被重新算一遍。
+                评测集、检索器和切分策略全部开源，跑出来的每个数字都能在几分钟内被重新算一遍。
+                代码在 <a href={REPO_URL} target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-foreground">GitHub 仓库</a>（MIT 许可）。
               </p>
             </CardContent>
           </Card>
@@ -1105,6 +1112,15 @@ node --experimental-strip-types src/cli.ts ladder \\
               <span className="text-xs font-medium text-foreground">评测台</span>
               <span>数据集 {report.datasetId}</span>
               <span>仓库 {report.repo}</span>
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex w-fit items-center gap-1 underline underline-offset-4 hover:text-foreground"
+              >
+                <GitBranch className="size-3.5" />
+                开源仓库（MIT）
+              </a>
             </div>
             <div className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-foreground">数据来源</span>

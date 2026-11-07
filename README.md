@@ -7,9 +7,6 @@
 
 代码仓库：https://github.com/BaconChen34569/eval-bench
 
-不想装环境也可以直接下载打包好的源码（免注册、免密钥）：
-https://copilot-eval-bench-fzlro45ljfz.qoder.zone/eval-bench-source.zip
-
 ## 这个东西在做什么
 
 课设 Copilot 的意思是：让 AI 按你的要求写一份课设。但「写得好不好」一直是句空话。
@@ -36,6 +33,9 @@ docs/             设计分析、天池投稿
 ## 跑起来
 
 ```bash
+git clone https://github.com/BaconChen34569/eval-bench.git
+cd eval-bench
+
 bash corpus/fetch.sh                      # 拉被测仓库，约 3 MB
 cd harness
 node --experimental-strip-types src/cli.ts experiment \

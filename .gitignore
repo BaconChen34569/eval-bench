@@ -19,8 +19,5 @@ harness/out/
 corpus/repos/
 corpus/tmp/
 
-# 本地临时目录（打包中间产物、临时截图）
+# 本地临时目录（临时截图、推送中间产物）
 tmp/
-
-# 源码包：由 site/scripts/pack-source.mjs 生成，内容就是本仓库本身，不进版本库
-site/public/eval-bench-source.zip
