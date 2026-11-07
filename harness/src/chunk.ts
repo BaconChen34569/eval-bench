@@ -133,16 +133,47 @@ function scanSymbols(file: CodeFile): SymbolBoundary[] {
   return found;
 }
 
+/**
+ * 找到 Python `def` 头的结束行（1-based）。
+ *
+ * 多行签名是这个扫描器的第一个坑：
+ *
+ *     def wsgi_app(
+ *         self, environ: WSGIEnvironment, start_response: StartResponse
+ *     ) -> cabc.Iterable[bytes]:
+ *
+ * 收尾的 `) -> ...:` 那一行的缩进和 `def` 一样，按「缩进不大于自身即结束」的规则，
+ * 函数体会在签名的第三行就被判结束，函数只留下 2 行——比 minFunctionLines 还小，
+ * 于是这个函数**根本不会被切出来**，它所在的行区间最后只能落进一块没有符号名的
+ * 空白块里。Flask 的 wsgi_app、__call__ 都是这样丢的。
+ *
+ * 所以先把签名读完：括号配平、且行尾是冒号的那一行，才算签名结束。
+ */
+function pythonHeaderEnd(file: CodeFile, startLine: number): number {
+  let balance = 0;
+  for (let line = startLine; line <= file.lines.length; line++) {
+    const text = file.lines[line - 1];
+    for (const ch of text) {
+      if (ch === "(") balance++;
+      else if (ch === ")") balance--;
+    }
+    if (balance <= 0 && text.trimEnd().endsWith(":")) return line;
+  }
+  return startLine;
+}
+
 /** 缩进语言：符号块在遇到缩进不大于自身的非空行时结束。 */
 function assignIndentEnds(file: CodeFile, symbols: SymbolBoundary[]): void {
+  const isPython = file.language === "python";
   for (const symbol of symbols) {
-    let end = symbol.startLine;
-    for (let line = symbol.startLine; line < file.lines.length; line++) {
-      const text = file.lines[line];
+    const headerEnd = isPython ? pythonHeaderEnd(file, symbol.startLine) : symbol.startLine;
+    let end = headerEnd;
+    for (let line = headerEnd + 1; line <= file.lines.length; line++) {
+      const text = file.lines[line - 1];
       if (text.trim() === "") continue;
       const indent = INDENT_RE.exec(text)?.[0].length ?? 0;
-      if (indent <= symbol.indent && line + 1 > symbol.startLine) break;
-      end = line + 1;
+      if (indent <= symbol.indent) break;
+      end = line;
     }
     symbol.endLine = end;
   }
@@ -254,13 +285,27 @@ export function chunkByFunction(
   const symbols = scanSymbols(file);
   if (symbols.length === 0) return [];
 
+  // 类内部的空白（方法与方法之间的那几行）不再单独成块。
+  // 之前它们是一堆没有符号名的块：既拉低了 BM25 的排序质量，又白占上下文预算，
+  // 而这些行的真正归属——类——本身已经是一块了。
+  const classRanges = symbols
+    .filter((symbol) => symbol.kind === "class")
+    .map((symbol) => ({ start: symbol.startLine, end: symbol.endLine }));
+
   const chunks: Chunk[] = [];
   let cursor = 1;
 
   for (const symbol of symbols) {
     // 符号声明之前、且不属于任何符号的模块级代码单独成块
     if (symbol.startLine > cursor) {
-      chunks.push(toChunk(file, cursor, symbol.startLine - 1));
+      const gapStart = cursor;
+      const gapEnd = symbol.startLine - 1;
+      const insideClass = classRanges.some(
+        (range) => gapStart >= range.start && gapEnd <= range.end,
+      );
+      if (!insideClass) {
+        chunks.push(toChunk(file, gapStart, gapEnd));
+      }
     }
 
     const lines = symbol.endLine - symbol.startLine + 1;

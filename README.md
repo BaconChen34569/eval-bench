@@ -55,6 +55,31 @@ cd site && npm ci && npm run dev
 改两处即可：题集放 `harness/datasets/`，被测仓库换个路径。
 评测逻辑一行都不用动。题集怎么写见 [harness/README.md](harness/README.md)。
 
+## 用站点看自己的数据
+
+站点的数据层和视图层是分开的：`site/src/App.tsx` 只读 `site/data/report.json`，
+这份文件就是 harness 的 `out/report.json`。
+
+```bash
+cd harness && node --experimental-strip-types src/cli.ts experiment \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
+cp out/report.json ../site/data/report.json
+cd ../site && npm run dev
+```
+
+站点展示的官方数字只有一份来源，就是仓库里的这份 `report.json`。
+线上站点不提供上传入口——页面上每个数字必须能指向唯一一份报告，
+这样任何人都能用同一套题、同一个模型把数字重算一遍。
+
+站点上的「优化前后」一节对比的是上一版评测台的结果。
+它不是手写的数字，而是把上一版报告原样带进新报告：
+
+```bash
+node --experimental-strip-types src/cli.ts ladder \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \
+  --reuse out/report.json --baseline out/report-previous.json
+```
+
 ## 许可
 
 本仓库代码采用 MIT 许可，见 [LICENSE](LICENSE)。被测仓库各自的许可保留在语料目录内，

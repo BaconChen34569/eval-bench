@@ -63,6 +63,7 @@ export async function runRetrievalEval(
     for (const question of options.dataset.questions) {
       const hits = search(index, question.question, maxK, {
         rerankMode: options.retrieval.rerankMode,
+        queryExpansion: options.retrieval.queryExpansion,
       });
       const citations = toCitations(hits);
       const gold = question.reference.evidence;

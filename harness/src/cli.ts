@@ -4,9 +4,11 @@ import { runEvaluation } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
 import { configFromEnv, listModels, tryConfigFromEnv } from "./llm.ts";
-import { runLadder } from "./ladder.ts";
-import { CODE_VERSION } from "./schema.ts";
+import { LADDER, runLadder } from "./ladder.ts";
+import { readBaseline } from "./baseline.ts";
+import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
 import type {
+  BaselineSnapshot,
   ChunkingStrategy,
   EvalDataset,
   EvalRun,
@@ -50,15 +52,27 @@ export const STRATEGIES: Record<string, ChunkingStrategy> = {
   },
 };
 
-const DEFAULT_RETRIEVAL: RetrievalConfig = { topK: 6, rerank: false };
+/**
+ * 横向对比时三种切分策略共用的检索配置。
+ *
+ * 三种策略必须用同一套检索器，否则分数的变化说不清是切分造成的还是检索造成的。
+ * 这里用的是工具迭代到最后一轮定下来的那套配置（BM25 + 结构感知重排 + 中英术语扩展），
+ * 也就是评测台实际会跑的那一套——在最好的操作点上比较切分方式。
+ */
+const DEFAULT_RETRIEVAL: RetrievalConfig = {
+  topK: 6,
+  rerank: true,
+  rerankMode: "structure-aware",
+  queryExpansion: true,
+};
 
 function usage(): never {
   console.error(
     `用法:
-  node --experimental-strip-types src/cli.ts experiment <dataset.json> <repoRoot> [--out report.json]
+  node --experimental-strip-types src/cli.ts experiment <dataset.json> <repoRoot> [--out report.json] [--baseline 旧报告.json]
   node --experimental-strip-types src/cli.ts recall <dataset.json> <repoRoot> [--out report.json]
   node --experimental-strip-types src/cli.ts run <dataset.json> <repoRoot> <strategyId> [--out run.json] [--limit N]
-  node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json]
+  node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json]
   node --experimental-strip-types src/cli.ts report <run.json...> [--out report.json]
   node --experimental-strip-types src/cli.ts models
 
@@ -79,6 +93,30 @@ async function readDataset(path: string): Promise<EvalDataset> {
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, JSON.stringify(value, null, 2), "utf8");
+}
+
+/**
+ * 读取上一版报告，作为「优化前后」的对照基线。
+ *
+ * 基线必须是旧报告里真实跑出来的记录，不能凭记忆手写数字，
+ * 否则站上的「前后对比」就成了自我表扬。
+ */
+async function readBaselineFrom(
+  path: string | undefined,
+): Promise<BaselineSnapshot | undefined> {
+  if (!path) return undefined;
+  const previous = JSON.parse(await readFile(path, "utf8")) as ExperimentReport;
+  const snapshot = readBaseline(previous);
+  if (!snapshot) {
+    console.log(`基线报告 ${path} 里没有可用的横向对比记录，跳过对照`);
+    return undefined;
+  }
+  console.log(
+    `对照基线：${path}（代码版本 ${snapshot.codeVersion}，` +
+      `成功率 ${(snapshot.summary.successRate * 100).toFixed(1)}%，` +
+      `${snapshot.chunking.label}）`,
+  );
+  return snapshot;
 }
 
 /**
@@ -193,6 +231,8 @@ async function main(): Promise<void> {
       runs,
       ladderRuns: [],
       ladder: [],
+      baseline: await readBaselineFrom(flagValue(args, "--baseline")),
+      changes: CODE_CHANGES[CODE_VERSION] ?? [],
     };
 
     await writeJson(outputPath, report);
@@ -232,7 +272,7 @@ async function main(): Promise<void> {
         `  judge 均分 ${judgeValidation.meanJudgeScore.toFixed(2)} vs 人工均分 ${judgeValidation.meanHumanScore.toFixed(2)}`,
     );
 
-    console.log(`\n迭代阶梯：${dataset.questions.length} 题 × 5 轮`);
+    console.log(`\n迭代阶梯：${dataset.questions.length} 题 × ${LADDER.length} 轮`);
     const { steps, runs: ladderRuns } = await runLadder({
       dataset,
       repoRoot,
@@ -273,6 +313,22 @@ async function main(): Promise<void> {
       (run) => reusable(run) && run.origin !== "ladder",
     );
 
+    // runRetrievalEval 只算检索层，生成层的数字得从复用来的运行记录里回填，
+    // 否则报告里的策略只有召回没有成功率，站点的生成层区块整块都不会渲染。
+    for (const run of strategyRuns) {
+      const metrics = strategyMetrics.find(
+        (item) => item.strategy.id === run.chunking.id,
+      );
+      if (!metrics) continue;
+      metrics.successRate = run.summary.successRate;
+      metrics.avgJudgeScore = run.summary.avgJudgeScore;
+      metrics.avgLatencyMs = run.summary.avgLatencyMs;
+      metrics.p95LatencyMs = run.summary.p95LatencyMs;
+      metrics.avgCost = run.summary.avgCost;
+      metrics.totalCost = run.summary.totalCost;
+      metrics.totalTokens = run.summary.totalTokens;
+    }
+
     const report: ExperimentReport = {
       datasetId: dataset.id,
       repo: dataset.repo,
@@ -282,6 +338,12 @@ async function main(): Promise<void> {
       runs: strategyRuns,
       ladderRuns,
       ladder: steps,
+      // --baseline 没给时沿用被复用报告里已有的基线，
+      // 否则复用旧运行记录重跑一遍就会把对照弄丢。
+      baseline:
+        (await readBaselineFrom(flagValue(args, "--baseline"))) ??
+        previous?.baseline,
+      changes: CODE_CHANGES[CODE_VERSION] ?? [],
     };
 
     await writeJson(outputPath, report);

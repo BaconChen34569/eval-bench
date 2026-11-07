@@ -70,8 +70,9 @@ export function LadderSection() {
   );
   // 没有独立带来收益的轮次：成功率没涨，成本还涨了。
   // 注意这些改动可能被后面的轮次继承，所以只能说明「这一轮单独看不出来」。
-  const flat = ladder.slice(1).flatMap((step, index) => {
-    const previous = ladder[index];
+  const flat = ladder.flatMap((step, index) => {
+    if (index === 0) return [];
+    const previous = ladder[index - 1];
     if (
       step.summary.successRate > previous.summary.successRate + 0.001 ||
       step.summary.totalCost <= previous.summary.totalCost
@@ -85,6 +86,25 @@ export function LadderSection() {
     );
     return [{ step, rise }];
   });
+  // 单独一轮把成功率拉低的情况。这也得说出来，
+  // 阶梯的价值不在于每一轮都涨，而在于每一轮的涨跌都能解释。
+  const regressed = ladder.flatMap((step, index) => {
+    if (index === 0) return [];
+    const previous = ladder[index - 1];
+    const delta = step.summary.successRate - previous.summary.successRate;
+    if (delta >= -0.001) return [];
+    const recallDelta =
+      step.retrievalMetrics.recallAtBudget -
+      previous.retrievalMetrics.recallAtBudget;
+    // 这一轮改的是提示词的话，后面几轮还留着它——说明它是被继承的，
+    // 而不是被回滚掉的。
+    const promptChanged = step.promptVersion !== previous.promptVersion;
+    const inherited = promptChanged
+      ? ladder.slice(index + 1).filter((later) => later.promptVersion === step.promptVersion)
+          .length
+      : 0;
+    return [{ step, drop: Math.abs(delta * 100), recallDelta, inherited }];
+  });
   const bestRecall = ladder.reduce((a, b) =>
     b.retrievalMetrics.recallAtBudget > a.retrievalMetrics.recallAtBudget ? b : a,
   );
@@ -93,7 +113,7 @@ export function LadderSection() {
     <div className="flex flex-col gap-6">
       <div className="rounded-xl border border-chart-2/30 bg-chart-2/10 px-5 py-4">
         <p className="text-sm leading-relaxed">
-          五轮跑下来，最优的是{" "}
+          {ladder.length} 轮跑下来，最优的是{" "}
           <span className="font-medium text-foreground">
             {best.id} {best.title}
           </span>
@@ -101,7 +121,8 @@ export function LadderSection() {
           {best.id !== ladder[0].id ? (
             <>
               ，比起点 {ladder[0].id} 高{" "}
-              {formatPercent(best.summary.successRate - ladder[0].summary.successRate)}
+              {((best.summary.successRate - ladder[0].summary.successRate) * 100).toFixed(1)}{" "}
+              个百分点
             </>
           ) : null}
           。检索层召回最高的是 {bestRecall.id}（{formatPercent(bestRecall.retrievalMetrics.recallAtBudget)}）
@@ -128,6 +149,27 @@ export function LadderSection() {
                 )
                 .join("；")}
               。它的改动被后面的轮次继承，所以判断一个改动有没有用，本来就不能只看一轮。
+            </>
+          ) : null}
+          {regressed.length > 0 ? (
+            <>
+              {" "}
+              还有一轮要单独说：
+              {regressed
+                .map(({ step, drop, recallDelta, inherited }) => {
+                  const recallNote =
+                    Math.abs(recallDelta) < 0.001
+                      ? "同一轮里检索层的召回率和上一轮一模一样，所以掉分不是检索变差，而是改动本身的副作用"
+                      : `同一轮里检索层的召回率还涨了 ${(recallDelta * 100).toFixed(1)} 个百分点，但成功率反而掉了——说明瓶颈在生成侧`;
+                  const inheritNote =
+                    inherited > 0
+                      ? `这个改动被后面 ${inherited} 轮一路继承了下去，最终那一轮做到了 ${formatPercent(best.summary.successRate)}。`
+                      : "";
+                  return `${step.id} 单独看把成功率拉低了 ${drop.toFixed(1)} 个百分点——${recallNote}。${inheritNote}`;
+                })
+                .join("；")}
+              一个单独看是负收益的改动，把它从曲线里抹掉，就没法知道后面的收益有多少来自它——
+              所以失败的轮次不能删。
             </>
           ) : null}
         </p>
@@ -283,7 +325,7 @@ export function LadderSection() {
                         }`}
                       >
                         {delta > 0 ? "+" : ""}
-                        {formatPercent(delta)}
+                        {(delta * 100).toFixed(1)} pt
                       </span>
                     ) : null}
                   </td>

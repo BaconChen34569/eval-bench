@@ -74,8 +74,15 @@ export interface RetrievalConfig {
   /**
    * 重排方式。symbol-boost 在 BM25 之上叠加「问题里的标识符正好等于代码块符号名」的加权，
    * 用来回答「排序对不对」这件事；不开启时结果与纯 BM25 完全一致。
+   * structure-aware 在 symbol-boost 之上再加一层结构感知：文件路径里的词单独加权，
+   * 问题里点名整条路径（如 flask/app.py）时精确命中。
    */
-  rerankMode?: "none" | "symbol-boost";
+  rerankMode?: "none" | "symbol-boost" | "structure-aware";
+  /**
+   * 是否把问题里的中文术语展开成英文候选词再参与检索。
+   * 中文提问 + 英文代码时，字面上没有交集的词只能靠这张术语表桥接。
+   */
+  queryExpansion?: boolean;
 }
 
 /** agent 提示词的版本。只有迭代阶梯会换提示词，横切分策略对比时必须固定。 */
@@ -90,7 +97,24 @@ export type PromptVersion = "base" | "cite-first";
  *
  * 改动 chunk.ts / retrieval.ts 的算法时必须手动 +1。
  */
-export const CODE_VERSION = "2026-11-07.r2";
+export const CODE_VERSION = "2026-11-07.r3";
+
+/**
+ * 每一版代码相对上一版改了什么。
+ *
+ * 站点展示「优化前后」时不能只摆两个数字，还要说清楚中间发生了什么，
+ * 否则读者只知道分数变了，不知道是哪儿变了。
+ * 这里写的是代码层面的事实（哪几个文件、哪种改动），不是结论。
+ * 每一项描述的是「相对上一版」改了什么，所以版本号 +1 时要补上对应条目。
+ */
+export const CODE_CHANGES: Record<string, string[]> = {
+  "2026-11-07.r3": [
+    "切分（chunk.ts）：多行 def 签名不再被吞掉，函数块重新带上完整签名",
+    "切分（chunk.ts）：类内部的空隙不再单独成块，块数从 730 降到 557",
+    "检索（retrieval.ts）：重排从符号加权升级为结构感知，文件路径单独加权",
+    "检索（bilingual.ts）：新增中英术语扩展，中文提问也能命中英文代码",
+  ],
+};
 
 export interface Citation {
   file: string;
@@ -268,6 +292,41 @@ export interface LadderStep {
   summary: RunSummary;
 }
 
+/**
+ * 上一版评测台的对照快照。
+ *
+ * 站点要展示「优化前后」，手上就得同时有前后两组数字。
+ * 前一组不靠记忆手写：把上一版报告里最好的那次横向对比运行原样搬过来，
+ * 连同它那一版的检索层指标，这样两边量的是同一把尺子。
+ */
+export interface BaselineSnapshot {
+  /** 基线来自哪一版代码 */
+  codeVersion: string;
+  /** 基线用的切分策略 */
+  chunking: ChunkingStrategy;
+  /** 基线用的模型 */
+  model: string;
+  /** 基线的生成层汇总 */
+  summary: RunSummary;
+  /** 基线的检索层指标 */
+  retrievalMetrics: {
+    recallAt1: number;
+    recallAt3: number;
+    recallAt6: number;
+    mrr: number;
+    avgContextChars: number;
+    chunkCount: number;
+  };
+  /** 逐题结果，用于和当前版本做逐题对照 */
+  cases: {
+    questionId: string;
+    category: QuestionCategory;
+    judgeScore: number;
+    evidenceRecall: number;
+    failureKind?: CaseResult["failureKind"];
+  }[];
+}
+
 /** 一个数据集上的多次运行，用于横向对比 */
 export interface ExperimentReport {
   datasetId: string;
@@ -284,4 +343,8 @@ export interface ExperimentReport {
   ladderRuns: EvalRun[];
   /** 工具迭代阶梯，按时间顺序 */
   ladder: LadderStep[];
+  /** 上一版的对照快照，站点用它展示优化前后 */
+  baseline?: BaselineSnapshot;
+  /** 从基线版本到当前版本，代码层面改了什么 */
+  changes?: string[];
 }

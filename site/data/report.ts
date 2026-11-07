@@ -112,6 +112,17 @@ export interface EvalRun {
   startedAt: string;
   finishedAt: string;
   chunking: ChunkingStrategy;
+  /** 这一轮的检索配置 */
+  retrieval: {
+    topK: number;
+    rerank: boolean;
+    rerankMode?: "none" | "symbol-boost" | "structure-aware";
+    queryExpansion?: boolean;
+  };
+  /** 这一轮用的 agent 提示词版本 */
+  promptVersion: "base" | "cite-first";
+  /** 产出这条记录的评测台代码版本 */
+  codeVersion: string;
   /** 这次运行属于横向策略对比，还是迭代阶梯的一轮 */
   origin?: "strategy-compare" | "ladder";
   /** 属于阶梯的哪一轮 */
@@ -143,7 +154,8 @@ export interface LadderStep {
   retrieval: {
     topK: number;
     rerank: boolean;
-    rerankMode?: "none" | "symbol-boost";
+    rerankMode?: "none" | "symbol-boost" | "structure-aware";
+    queryExpansion?: boolean;
   };
   promptVersion: "base" | "cite-first";
   model: string;
@@ -162,6 +174,35 @@ export interface LadderStep {
   summary: EvalRun["summary"];
 }
 
+/**
+ * 上一版评测台的对照快照。
+ *
+ * 站点用它展示优化前后：前后必须是同一批题、同一个模型、同一把 judge 尺子，
+ * 否则对比说明不了任何问题。
+ */
+export interface BaselineSnapshot {
+  /** 基线来自哪一版代码 */
+  codeVersion: string;
+  chunking: ChunkingStrategy;
+  model: string;
+  summary: EvalRun["summary"];
+  retrievalMetrics: {
+    recallAt1: number;
+    recallAt3: number;
+    recallAt6: number;
+    mrr: number;
+    avgContextChars: number;
+    chunkCount: number;
+  };
+  cases: {
+    questionId: string;
+    category: QuestionCategory;
+    judgeScore: number;
+    evidenceRecall: number;
+    failureKind?: RunCase["failureKind"];
+  }[];
+}
+
 export interface ExperimentReport {
   datasetId: string;
   repo: string;
@@ -174,6 +215,10 @@ export interface ExperimentReport {
   ladderRuns: EvalRun[];
   /** 工具迭代阶梯，按时间顺序 */
   ladder: LadderStep[];
+  /** 上一版的对照快照 */
+  baseline?: BaselineSnapshot;
+  /** 从基线版本到当前版本，代码层面改了什么 */
+  changes?: string[];
 }
 
 export const report = raw as unknown as ExperimentReport;
@@ -189,6 +234,12 @@ export const ladder = [...(report.ladder ?? [])];
 
 /** 阶梯每一轮的运行记录，按轮次顺序。 */
 export const ladderRuns = [...(report.ladderRuns ?? [])];
+
+/** 上一版评测台的对照快照，旧报告没带时为 undefined。 */
+export const baseline = report.baseline;
+
+/** 从基线版本到当前版本，代码层面改了什么。 */
+export const changes = report.changes ?? [];
 
 /** 某轮阶梯对应的运行记录。 */
 export function ladderRun(stepId: string): EvalRun | undefined {

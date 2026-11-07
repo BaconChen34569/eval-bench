@@ -68,6 +68,18 @@ const TOP10_RERANK: RetrievalConfig = {
   rerank: true,
   rerankMode: "symbol-boost",
 };
+const TOP10_RERANK_EXPAND: RetrievalConfig = {
+  topK: 10,
+  rerank: true,
+  rerankMode: "symbol-boost",
+  queryExpansion: true,
+};
+const TOP10_STRUCTURE_EXPAND: RetrievalConfig = {
+  topK: 10,
+  rerank: true,
+  rerankMode: "structure-aware",
+  queryExpansion: true,
+};
 
 export const LADDER: LadderConfig[] = [
   {
@@ -113,6 +125,24 @@ export const LADDER: LadderConfig[] = [
     hypothesis: "recall@6 是天花板，放宽预算能再捞回一点，但上下文和成本会跟着涨",
     chunking: FUNCTION_LEVEL,
     retrieval: TOP10_RERANK,
+    promptVersion: "cite-first",
+  },
+  {
+    id: "v6",
+    title: "补术语桥：中文问题展开成英文候选词",
+    change: "只改查询构造：问题里的中文术语展开成英文候选词一起参与打分",
+    hypothesis: "中文提问、英文代码时字面上没有交集，扩展出的候选词能救回一批定位失败",
+    chunking: FUNCTION_LEVEL,
+    retrieval: TOP10_RERANK_EXPAND,
+    promptVersion: "cite-first",
+  },
+  {
+    id: "v7",
+    title: "加结构感知：路径单独加权",
+    change: "只改重排方式：符号加权 → 结构感知（路径加权 + 整条路径精确命中）",
+    hypothesis: "问题里点名模块时，让该模块的代码块排到前面",
+    chunking: FUNCTION_LEVEL,
+    retrieval: TOP10_STRUCTURE_EXPAND,
     promptVersion: "cite-first",
   },
 ];
@@ -165,6 +195,7 @@ export function measureRetrieval(
   for (const question of dataset.questions) {
     const hits = search(index, question.question, maxK, {
       rerankMode: retrieval.rerankMode,
+      queryExpansion: retrieval.queryExpansion,
     });
     const citations = toCitations(hits);
     const gold = question.reference.evidence;
@@ -220,6 +251,7 @@ function sameConfig(
     run.chunking.id === step.chunking.id &&
     run.retrieval.topK === step.retrieval.topK &&
     (run.retrieval.rerankMode ?? "none") === (step.retrieval.rerankMode ?? "none") &&
+    (run.retrieval.queryExpansion ?? false) === (step.retrieval.queryExpansion ?? false) &&
     (run.promptVersion ?? "base") === step.promptVersion
   );
 }

@@ -8,6 +8,7 @@ import {
   formatNumber,
   formatPercent,
   ladder,
+  ladderRuns,
   questions,
   report,
   runs,
@@ -21,6 +22,7 @@ import { DataView } from "@/components/eval/data-view";
 import { CostBreakdownPopover } from "@/components/eval/cost-breakdown";
 import { ExportButtons } from "@/components/eval/export-buttons";
 import { LadderSection } from "@/components/eval/ladder-section";
+import { BaselineSection } from "@/components/eval/baseline-section";
 import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 import {
   StrategyCostChart,
@@ -122,11 +124,33 @@ const worstStrategy = [...generationStrategies].sort(
   (a, b) => (a.successRate ?? 0) - (b.successRate ?? 0),
 )[0];
 
+/**
+ * 首屏那个「最高成功率」取的是全站最好的一次运行——横向对比和迭代阶梯都算。
+ * 阶梯的每一轮也是这个工具的一种配置，只看横向对比会低报自己的成绩。
+ */
+const headlineRun = [...new Map(
+  [...runs, ...ladderRuns].map((run) => [run.runId, run]),
+).values()]
+  .filter((run) => run.cases.length === questions.length)
+  .sort((a, b) => b.summary.successRate - a.summary.successRate)[0];
+
+const headlineFailed = headlineRun
+  ? headlineRun.cases.filter(
+      (item) => item.judgeScore < headlineRun.summary.successThreshold,
+    )
+  : [];
+const headlineWrongLocation = headlineFailed.filter(
+  (item) => item.failureKind === "wrong-location",
+).length;
+
 const SECTIONS = [
   { id: "why", label: "为什么先测检索层", short: "为什么" },
   { id: "experiment", label: "切分策略对比", short: "切分对比" },
   ...(hasGeneration
     ? [{ id: "generation", label: "生成层结果", short: "生成层" }]
+    : []),
+  ...(report.baseline
+    ? [{ id: "baseline", label: "优化前后", short: "前后" }]
     : []),
   ...(ladder.length > 0
     ? [{ id: "ladder", label: "工具迭代史", short: "迭代史" }]
@@ -359,14 +383,14 @@ export default function App() {
           <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Metric
               label="最高成功率"
-              value={formatPercent(bestGeneration?.run.summary.successRate ?? 0)}
-              hint={`${bestGeneration?.run.chunking.label} · ${questions.length} 题里 ${Math.round((bestGeneration?.run.summary.successRate ?? 0) * questions.length)} 题达标`}
+              value={formatPercent(headlineRun?.summary.successRate ?? 0)}
+              hint={`${headlineRun?.chunking.label} · top-${headlineRun?.retrieval.topK} · ${questions.length} 题里 ${Math.round((headlineRun?.summary.successRate ?? 0) * questions.length)} 题达标`}
               accent
             />
             <Metric
               label="失败里有多少是定位错了"
-              value={`${Math.round((bestWrongLocation / Math.max(bestFailedCount, 1)) * 100)}%`}
-              hint={`${bestFailedCount} 次失败中 ${bestWrongLocation} 次，瓶颈在检索侧`}
+              value={`${Math.round((headlineWrongLocation / Math.max(headlineFailed.length, 1)) * 100)}%`}
+              hint={`${headlineFailed.length} 次失败中 ${headlineWrongLocation} 次，瓶颈在检索侧`}
             />
             <Metric
               label="judge 自检一致率"
@@ -403,7 +427,7 @@ export default function App() {
               <CardHeader>
                 <CardTitle className="text-base">这一层不需要大模型</CardTitle>
                 <CardDescription>
-                  固定 BM25 检索器，只换切分策略，分数变化就归因于切分本身。
+                  固定一套检索器，只换切分策略，分数变化就归因于切分本身。
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -422,7 +446,8 @@ export default function App() {
           <div className="flex flex-col gap-2">
             <SectionTitle id="experiment">切分策略对比实验</SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              同一个仓库、同一套 BM25 检索器、同样的 top-6 召回预算，只改变代码块的切法：
+              同一个仓库、同一套检索器（BM25 + 结构感知重排 + 中英术语扩展）、
+              同样的 top-6 召回预算，只改变代码块的切法：
               固定 800 字符、固定 400 字符、以及按函数/类边界切分。
             </p>
           </div>
@@ -491,9 +516,9 @@ export default function App() {
                 预算和你的问题是不是需要跨多个函数理解。
               </p>
               <p className="text-muted-foreground">
-                注意最右边的数字：三种策略里 recall@6 最高的也只有{" "}
+                注意最右边的数字：在同样的 top-6 预算下，三种策略里 recall@6 最高的也只有{" "}
                 {formatPercent(maxRecallAt6)}
-                。检索层本身就是瓶颈，这正是这个评测台存在的理由。
+                。检索层本身就是瓶颈——放宽预算能继续往上拉，见下一节的迭代阶梯。
               </p>
             </CardContent>
           </Card>
@@ -788,6 +813,24 @@ export default function App() {
           </section>
         )}
 
+        {report.baseline && (
+          <section id="baseline" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <SectionTitle id="baseline">优化前后</SectionTitle>
+              <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                评测台自己也会犯错，也会用错方法。这一节把上一版跑出来的记录
+                原样搬过来，和当前版本逐题对照——
+                <span className="font-medium text-foreground">
+                  同一批题、同一个模型、同一把 judge 尺子、同一条成功线
+                </span>
+                ，所以两边的数字可以直接比。
+              </p>
+            </div>
+
+            <BaselineSection />
+          </section>
+        )}
+
         {ladder.length > 0 && (
           <section id="ladder" className="scroll-mt-16 mt-16 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
@@ -799,7 +842,8 @@ export default function App() {
                 </span>
                 。
                 每一轮都继承上一轮，只相对上一轮改一个变量——
-                换一次切分方式、换一次排序方式、换一次提示词、放宽一次检索预算——
+                换一次切分方式、换一次排序方式、换一次提示词、放宽一次检索预算、
+                补一次中英术语桥——
                 然后用完全相同的协议重跑一遍：
                 同样 {questions.length} 道题、同一个模型、同一套 judge、同样 {">="}4
                 分的成功线。所以轮与轮之间的数字是可以直接比的。
@@ -1075,10 +1119,12 @@ node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/re
 node --experimental-strip-types src/cli.ts experiment \\
   datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
 
-# 3. 跑工具迭代阶梯：5 轮，每轮只改一个变量
+# 3. 跑工具迭代阶梯：每轮只改一个变量
 #    --reuse 会复用配置一致、且代码版本一致的已有运行记录
+#    --baseline 传入上一版报告，把旧结果一并写进报告，用于展示优化前后
 node --experimental-strip-types src/cli.ts ladder \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
+  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \\
+  --reuse out/report.json --baseline out/report-previous.json
 
 # 4. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
 #    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`}</code>

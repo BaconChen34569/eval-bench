@@ -71,6 +71,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
   for (const [position, question] of questions.entries()) {
     const hits = search(index, question.question, retrieval.topK, {
       rerankMode: retrieval.rerankMode,
+      queryExpansion: retrieval.queryExpansion,
     });
     const chunksForPrompt = hits.map((hit) => hit.chunk);
     const fallbackCitations = toCitations(hits);

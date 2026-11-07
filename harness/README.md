@@ -91,6 +91,11 @@ node --experimental-strip-types src/cli.ts experiment \
 node --experimental-strip-types src/cli.ts ladder \
   datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json --reuse out/report.json
 
+# 把上一版报告作为对照基线带进新报告，站点据此展示优化前后
+node --experimental-strip-types src/cli.ts ladder \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \
+  --reuse out/report.json --baseline out/report-previous.json
+
 # 列出账号可用的模型 id，确认该填哪个模型名
 node --experimental-strip-types src/cli.ts models
 
