@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="课设 Copilot 评测台">
+  <rect width="64" height="64" rx="14" fill="#171717" />
+  <path d="M32 12 L39 24 H25 Z" fill="#fafafa" />
+  <rect x="9" y="36" width="46" height="15" rx="4" fill="#f54900" />
+  <g fill="#171717">
+    <rect x="15" y="36" width="4" height="9" />
+    <rect x="25" y="36" width="4" height="5" />
+    <rect x="35" y="36" width="4" height="9" />
+    <rect x="45" y="36" width="4" height="5" />
+  </g>
+</svg>

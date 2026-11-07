@@ -1,0 +1,12 @@
+{
+  "name": "eval-bench-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "experiment": "node --experimental-strip-types src/cli.ts experiment",
+    "recall": "node --experimental-strip-types src/cli.ts recall",
+    "ladder": "node --experimental-strip-types src/cli.ts ladder"
+  }
+}

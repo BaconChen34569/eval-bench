@@ -1,0 +1,33 @@
+MIT License
+
+Copyright (c) 2026 Bacon (BaconChen34569)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+本项目在评测时会拉取以下第三方包作为被测语料。它们不随本仓库分发，
+由 corpus/fetch.sh 从 PyPI 官方获取，各自保留原始许可：
+
+- Flask 3.1.3 — BSD-3-Clause
+- Jinja2 3.1.6 — BSD-3-Clause
+- Requests 2.34.2 — Apache-2.0
+- Werkzeug 3.1.9 — BSD-3-Clause
+
+站点前端基于 Qoder Sites 的 vinext-starter 模板改写，出处与许可见 site/PROVENANCE.md。

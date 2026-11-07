@@ -1,0 +1,456 @@
+{
+  "id": "flask-v1",
+  "repo": "flask",
+  "repoUrl": "https://github.com/pallets/flask",
+  "language": "python",
+  "createdAt": "2026-11-07",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "Flask 收到一个 WSGI 请求之后，从进入 `wsgi_app` 到响应返回，中间依次经过了哪些关键方法？请求上下文是在哪一步被 push、又是哪一步被 pop 的？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Flask.wsgi_app`（src/flask/app.py）先用 `self.request_context(environ)` 创建 `RequestContext` 并 `ctx.push()`，然后调用 `self.full_dispatch_request()`。`full_dispatch_request` 依次发 `request_started` 信号、执行 `preprocess_request()`（before_request 钩子）、再 `dispatch_request()` 匹配路由并调用视图，过程中抛出的异常交给 `handle_user_exception`。返回值交给 `finalize_request(rv)`，它内部先 `make_response(rv)` 把视图返回值转成 Response，再 `process_response(response)` 跑 after_request 钩子并发 `request_finished` 信号。最后 `wsgi_app` 的 finally 块里执行 `ctx.pop(error)`，请求上下文 pop 时才会触发 `do_teardown_request`，应用上下文 pop 时触发 `do_teardown_appcontext`。",
+        "evidence": [
+          { "file": "src/flask/app.py", "startLine": 1506, "endLine": 1527, "symbol": "wsgi_app" },
+          { "file": "src/flask/app.py", "startLine": 904, "endLine": 920, "symbol": "full_dispatch_request" }
+        ],
+        "mustMention": [
+          "wsgi_app 中先 ctx.push() 再 ctx.pop(error)",
+          "full_dispatch_request 依次调用 preprocess_request 与 dispatch_request",
+          "finalize_request 里做 make_response 与 process_response",
+          "teardown 钩子是在上下文 pop 时才触发的"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q02",
+      "question": "Flask 的应用上下文（AppContext）和请求上下文（RequestContext）的 push/pop 生命周期是怎样的？两者谁先被 push、谁先被 pop，teardown 钩子分别在什么环节触发？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "`RequestContext.push()` 先看 `_cv_app`：如果当前没有 app context 或者 app 不是同一个，就 `self.app.app_context()` 并 push 一个新的（这个新建的 app context 被记进 `self._cv_tokens`）；否则记 None。然后它设置 `_cv_request`、调用 `session_interface.open_session()` 打开 session，最后才 `match_request()` 做 URL 匹配——这样 session 在自定义 URL converter 里就已经可用。`RequestContext.pop()` 先在栈里只剩自己时跑 `do_teardown_request(exc)` 并调用 `request.close()`，然后 reset `_cv_request` 的 token，最后把自己在 push 时创建的那个 app context 一并 pop。`AppContext.push()` 只是 `_cv_app.set(self)` 并发 `appcontext_pushed` 信号；`AppContext.pop()` 只有在自己的 token 栈长度为 1（最外层）时才跑 `do_teardown_appcontext(exc)`。两者都用 contextvars 的 token 栈支持嵌套 push/pop，并检查「pop 出来的不是自己」就抛 AssertionError。",
+        "evidence": [
+          { "file": "src/flask/ctx.py", "startLine": 377, "endLine": 404, "symbol": "RequestContext.push" },
+          { "file": "src/flask/ctx.py", "startLine": 406, "endLine": 441, "symbol": "RequestContext.pop" },
+          { "file": "src/flask/ctx.py", "startLine": 251, "endLine": 272, "symbol": "AppContext.push / AppContext.pop" }
+        ],
+        "mustMention": [
+          "RequestContext.push 会先确保存在 app context 并记录下来",
+          "session 在 push 阶段打开，URL 匹配在其之后",
+          "RequestContext.pop 先执行 do_teardown_request 再 reset contextvar",
+          "AppContext.pop 只在最外层执行 do_teardown_appcontext"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q03",
+      "question": "Flask 默认的 session cookie 是在哪一层完成签名和序列化的？secret key、salt、摘要算法分别在哪里被使用，`TaggedJSONSerializer` 又扮演什么角色？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "全部集中在 `SecureCookieSessionInterface` 这一层（src/flask/sessions.py）。`get_signing_serializer()` 在 `app.secret_key` 为空时返回 None，否则把 `SECRET_KEY_FALLBACKS` 里的旧密钥和当前 `secret_key` 一起交给 `itsdangerous.URLSafeTimedSerializer`，salt 固定为 `\"cookie-session\"`，`key_derivation=\"hmac\"`、`digest_method` 为 sha1（由 `_lazy_sha1` 延迟取用，以兼容 FIPS 构建）。`open_session()` 从 cookie 取出值后用 `s.loads(val, max_age=max_age)` 反序列化，遇到 `BadSignature` 就退化成空 session（而不是报错）。`save_session()` 用 `s.dumps(dict(session))` 序列化，再 `response.set_cookie(...)` 写回。`TaggedJSONSerializer` 是它的中间序列化器，把 datetime、UUID、tuple、bytes 等非 JSON 类型用 tag 标记成可 JSON 化的结构，从而支持在 session 里存这些类型。",
+        "evidence": [
+          { "file": "src/flask/sessions.py", "startLine": 303, "endLine": 321, "symbol": "SecureCookieSessionInterface.get_signing_serializer" },
+          { "file": "src/flask/sessions.py", "startLine": 323, "endLine": 335, "symbol": "SecureCookieSessionInterface.open_session" },
+          { "file": "src/flask/sessions.py", "startLine": 337, "endLine": 385, "symbol": "SecureCookieSessionInterface.save_session" }
+        ],
+        "mustMention": [
+          "签名发生在 SecureCookieSessionInterface.get_signing_serializer",
+          "salt 是 cookie-session，摘要算法为 sha1",
+          "open_session 用 loads，BadSignature 时返回空 session",
+          "save_session 用 dumps 后调用 response.set_cookie",
+          "TaggedJSONSerializer 负责非 JSON 类型的 tag 转换"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q04",
+      "question": "蓝图注册到应用上时，通过 `record` / `record_once` 登记的延迟函数是在什么时候真正执行的？嵌套蓝图又是怎么被注册进去的？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "`Blueprint.register(app, options)` 先算出带点号的注册名 `name`（`name_prefix` + 自身 name），重名注册会抛 ValueError；然后 `make_setup_state()` 生成 `BlueprintSetupState`，在其中解析出 subdomain、url_prefix、url_defaults。若有 `static_folder` 就用 `state.add_url_rule(..., endpoint=\"static\")` 注册静态路由；接着 `_merge_blueprint_funcs` 把 view_functions、before_request_funcs、template_context_processors 等合并进 app（只在首次注册或首次以该名字注册时做）。之后才是 `for deferred in self.deferred_functions: deferred(state)`，也就是延迟函数在这一刻按登记顺序执行；`record_once` 登记的函数被包了一层，只有 `state.first_registration` 为真时才真正调用。最后才处理 CLI 命令组和嵌套蓝图：遍历 `self._blueprints`，逐层拼接 url_prefix 与 subdomain，把 `name_prefix` 设成父蓝图的名字后递归调用子蓝图的 `register`。",
+        "evidence": [
+          { "file": "src/flask/sansio/blueprints.py", "startLine": 302, "endLine": 347, "symbol": "Blueprint.register" },
+          { "file": "src/flask/sansio/blueprints.py", "startLine": 349, "endLine": 377, "symbol": "Blueprint.register 中嵌套蓝图注册部分" },
+          { "file": "src/flask/sansio/blueprints.py", "startLine": 232, "endLine": 244, "symbol": "Blueprint.record_once" }
+        ],
+        "mustMention": [
+          "register 中先 make_setup_state，再执行 deferred_functions",
+          "record_once 只在 first_registration 为真时执行",
+          "嵌套蓝图通过 name_prefix 拼出点号形式的注册名",
+          "url_prefix 与 subdomain 在嵌套时逐层拼接"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q05",
+      "question": "Flask 渲染模板时，模板是怎么在 app 的模板目录和各个 blueprint 的模板目录之间查找的？优先级规则是什么？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Flask.create_jinja_environment()` 构造的 `Environment` 使用 `DispatchingJinjaLoader` 作为 loader。`DispatchingJinjaLoader._iter_loaders()` 先 yield app 自己的 `jinja_loader`（只有设了 `template_folder` 才存在，见 `Scaffold.jinja_loader`），再按 `app.iter_blueprints()` 的注册顺序 yield 每个 blueprint 的 `jinja_loader`。`_get_source_fast()` 依次调用各 loader 的 `get_source`，第一个成功的就返回，所以 app 的模板目录优先于 blueprint 目录，先注册的 blueprint 也优先于后注册的。若配置 `EXPLAIN_TEMPLATE_LOADING`，则走 `_get_source_explained()`：它会尝试所有 loader 并把过程交给 `debughelpers.explain_template_loading_attempts` 记录日志，找不到时抛 TemplateNotFound。",
+        "evidence": [
+          { "file": "src/flask/templating.py", "startLine": 102, "endLine": 110, "symbol": "DispatchingJinjaLoader._iter_loaders" },
+          { "file": "src/flask/templating.py", "startLine": 92, "endLine": 100, "symbol": "DispatchingJinjaLoader._get_source_fast" },
+          { "file": "src/flask/templating.py", "startLine": 68, "endLine": 90, "symbol": "DispatchingJinjaLoader._get_source_explained" }
+        ],
+        "mustMention": [
+          "DispatchingJinjaLoader 依次遍历 app 和各 blueprint 的 jinja_loader",
+          "app 的模板目录优先于 blueprint 目录",
+          "EXPLAIN_TEMPLATE_LOADING 会记录所有查找尝试"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q06",
+      "question": "假设请求最终由一个嵌套蓝图处理，app 和各级蓝图上都注册了 `before_request` / `after_request`，这些回调的实际执行顺序是怎样的？为什么两个阶段的顺序恰好相反？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`preprocess_request()` 取 `names = (None, *reversed(request.blueprints))`，即先跑 app 级的 `url_value_preprocessors` 和 `before_request_funcs`，再从最外层蓝图到最内层蓝图依次执行；任何一个 `before_request` 返回非 None 就短路，该值被当作响应并且后续请求处理被终止。`process_response()` 则用 `chain(request.blueprints, (None,))`，即从最内层蓝图到最外层蓝图再到 app，而且每组内部用 `reversed()` 按注册的逆序执行（Flask 0.5 起的约定）。另外 `ctx._after_request_functions`（`after_this_request` 注册的）最先执行，最后如果 session 不是 null session 就调用 `save_session` 把 cookie 写回。顺序相反是因为前置钩子是「由外向内」逐层进入，后置钩子是「由内向外」逐层退出。",
+        "evidence": [
+          { "file": "src/flask/app.py", "startLine": 1271, "endLine": 1296, "symbol": "Flask.preprocess_request" },
+          { "file": "src/flask/app.py", "startLine": 1298, "endLine": 1324, "symbol": "Flask.process_response" }
+        ],
+        "mustMention": [
+          "preprocess_request 使用 reversed(request.blueprints)，先 app 后蓝图",
+          "process_response 使用 chain(request.blueprints, (None,))，先蓝图后 app",
+          "after_request 在同一分组内按注册逆序执行",
+          "before_request 返回非 None 会短路请求处理"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q07",
+      "question": "视图函数抛出异常时，Flask 是按什么顺序挑选错误处理器的？如果 app 级和蓝图级都注册了处理器，谁优先？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`full_dispatch_request` 捕获异常后交给 `handle_user_exception(e)`：若它是 `BadRequestKeyError` 且处于 debug 或 `TRAP_BAD_REQUEST_ERRORS` 打开状态，则设置 `show_exception = True`；若是 `HTTPException` 且没有被 `trap_http_exception` 拦截，就转交 `handle_http_exception`，后者跳过 `code is None` 的代理异常和内部的 `RoutingException`，其余用 `_find_error_handler` 查找。`_find_error_handler` 的顺序是：先按 HTTP 状态码（`code`）匹配，遍历 `(*blueprints, None)`，因此蓝图级优先于 app 级；状态码匹配不到时，再按异常类的 `__mro__` 逐级查找，同样蓝图优先。全部找不到则 `handle_user_exception` 原样重新抛出，由 `handle_exception` 兜底：发 `got_request_exception` 信号，根据 `PROPAGATE_EXCEPTIONS`（未显式配置时等于 `testing or debug`）决定是重新抛出还是记录日志并生成 `InternalServerError(original_exception=e)`，最后以 `from_error_handler=True` 调用 `finalize_request`。",
+        "evidence": [
+          { "file": "src/flask/sansio/app.py", "startLine": 823, "endLine": 846, "symbol": "App._find_error_handler" },
+          { "file": "src/flask/app.py", "startLine": 779, "endLine": 809, "symbol": "Flask.handle_user_exception" },
+          { "file": "src/flask/app.py", "startLine": 811, "endLine": 862, "symbol": "Flask.handle_exception" }
+        ],
+        "mustMention": [
+          "先按 HTTP 状态码匹配，再按异常类的 MRO 匹配",
+          "蓝图级错误处理器优先于 app 级",
+          "handle_user_exception 找不到处理器时重新抛出",
+          "handle_exception 生成 InternalServerError 并发送 got_request_exception 信号",
+          "PROPAGATE_EXCEPTIONS 决定是否重新抛出"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q08",
+      "question": "`request.blueprint` 和 `request.blueprints` 这两个属性是在源码的哪个文件、哪一段实现的？两者的返回值有什么区别？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "两者都实现在 `src/flask/wrappers.py` 的 `Request` 类里。`blueprint` 属性（约 161-178 行）先取 `self.endpoint`（即 `url_rule.endpoint`），若其中含有 `\".\"` 就用 `rpartition(\".\")[0]` 取出最后一个点之前的部分作为蓝图注册名；端点不属于蓝图、URL 匹配失败或尚未匹配时返回 None。`blueprints` 属性（约 180-195 行）调用 `helpers._split_blueprint_path(name)` 把点号名展开成从内到外的层级列表，例如 `\"parent.child\"` 得到 `[\"parent.child\", \"parent\"]`；没有蓝图时返回空列表。`endpoint` 本身是 `url_rule.endpoint` 的代理属性（约 146-159 行）。",
+        "evidence": [
+          { "file": "src/flask/wrappers.py", "startLine": 161, "endLine": 195, "symbol": "Request.blueprint / Request.blueprints" }
+        ],
+        "mustMention": [
+          "实现在 src/flask/wrappers.py 的 Request 类中",
+          "blueprint 取 endpoint 最后一个点之前的部分",
+          "blueprints 调用 _split_blueprint_path 展开嵌套蓝图链",
+          "匹配失败时 blueprint 为 None、blueprints 为空列表"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q09",
+      "question": "`MethodView` 是靠什么把请求分发到 `get` / `post` 等方法的？它的 `methods` 属性又是怎么自动推导出来的？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "实现在 `src/flask/views.py`。`MethodView.__init_subclass__`（165-180 行）在类定义时扫描模块级的 `http_method_funcs` 集合（get、post、head、options、delete、put、trace、patch），凡是这个类里定义了同名方法就把其大写形式加入 `cls.methods`，同时还会合并各基类已有的 `methods`；只要最终集合非空才赋值。`MethodView.dispatch_request`（182-191 行）用 `getattr(self, request.method.lower(), None)` 找到对应的处理函数；若请求方法是 HEAD 且没有 `head` 方法，则回退到 `get` 方法；两者都没有就 assert 失败，报 `Unimplemented method`。所有调用都经过 `current_app.ensure_sync(...)` 包装，因此异步视图也能工作。",
+        "evidence": [
+          { "file": "src/flask/views.py", "startLine": 165, "endLine": 191, "symbol": "MethodView.__init_subclass__ / MethodView.dispatch_request" }
+        ],
+        "mustMention": [
+          "实现在 src/flask/views.py 的 MethodView 类",
+          "__init_subclass__ 自动推导并设置 methods 属性",
+          "dispatch_request 用 request.method.lower() 查找处理方法",
+          "HEAD 请求在没有 head 方法时回退到 get"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q10",
+      "question": "`stream_with_context` 在源码里是怎么实现的？它凭什么能保证生成器被迭代的时候仍然能访问到 `request` 和 `session`？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "实现在 `src/flask/helpers.py` 的 `stream_with_context`（63-143 行）。它先尝试 `iter(generator_or_function)`，失败说明传入的是可调用对象，于是返回一个 decorator。真正的包装在内部的 `generator()` 里：先检查 `_cv_request.get(None)`，没有请求上下文就抛 RuntimeError；然后取出 `app_ctx`，先 `yield None` 这个哨兵值把当前上下文「录制」进生成器状态（这样异步视图下 ContextVar 记录的也是正确的 event loop），之后才 `with app_ctx, req_ctx:` 恢复上下文并 `yield from gen`，finally 里对拥有 `close` 的原始生成器调用 `close()` 清理。最外层 `wrapped_g = generator()` 之后立刻 `next(wrapped_g)`，把生成器提前推进到哨兵处，确保上下文已被保存。",
+        "evidence": [
+          { "file": "src/flask/helpers.py", "startLine": 104, "endLine": 143, "symbol": "stream_with_context 内部 generator" }
+        ],
+        "mustMention": [
+          "实现在 src/flask/helpers.py 的 stream_with_context",
+          "没有请求上下文时抛出 RuntimeError",
+          "先用 yield None 哨兵把上下文录制进生成器状态",
+          "再 with app_ctx, req_ctx 恢复上下文并 yield from",
+          "finally 中调用原始生成器的 close()"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q11",
+      "question": "Flask 把「HTTP 状态码」转换成「异常类」的约定是什么？内部用的是哪张映射表？转换规则定义在哪段代码里？",
+      "category": "convention",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "Flask 约定用状态码或异常类两种方式注册错误处理器，内部把状态码映射成异常类时直接复用 werkzeug 提供的映射表 `werkzeug.exceptions.default_exceptions`（在 `src/flask/sansio/scaffold.py` 顶部 import）。映射规则写在 `Scaffold._get_exc_class_and_code`（656-698 行）：如果传入的是整数，就用 `default_exceptions[code]` 查表，查不到就抛 ValueError 提示该码不是一个已知的 HTTP 错误码；否则把传入值直接当作异常类。如果传入的是实例而不是类，抛 TypeError；如果不是 Exception 的子类，抛 ValueError。最后，如果这个类是 `HTTPException` 的子类就同时返回它和它的 `code`，否则只返回类本身、`code` 为 None——这正是「非 HTTP 异常按异常类查找、HTTP 异常既可按码也可按类查找」这一约定的来源。",
+        "evidence": [
+          { "file": "src/flask/sansio/scaffold.py", "startLine": 656, "endLine": 698, "symbol": "Scaffold._get_exc_class_and_code" }
+        ],
+        "mustMention": [
+          "使用 werkzeug 的 default_exceptions 映射表",
+          "状态码查不到时抛 ValueError",
+          "传入实例抛 TypeError，非 Exception 子类抛 ValueError",
+          "HTTPException 子类同时返回类与 code，其余 code 为 None"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q12",
+      "question": "Flask 和 Blueprint 的静态文件分别是怎么对外提供服务的？入口方法各在哪里？`Flask.__init__` 里为什么用 weakref？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Flask.__init__`（src/flask/app.py 226-279 行）在存在 `static_folder` 时用 `add_url_rule` 注册一条 `f\"{static_url_path}/<path:filename>\"` 路由，view 函数是个 lambda，调用 `self_ref().send_static_file(**kw)`；这里 `self_ref = weakref.ref(self)`，源码注释明确说明是为了避免 app 对象与 view 函数之间形成引用环（对应 issue #3761）。`Flask.send_static_file`（308-328 行）先检查 `has_static_folder`，取 `get_send_file_max_age()`，然后交给 `helpers.send_from_directory` 安全地发送文件。Blueprint 侧在 `src/flask/blueprints.py` 有一份几乎相同的实现：`get_send_file_max_age`（55-80 行）和 `send_static_file`（82-102 行），静态路由则由 `Blueprint.register` 通过 `state.add_url_rule(..., endpoint=\"static\")` 注册。",
+        "evidence": [
+          { "file": "src/flask/app.py", "startLine": 262, "endLine": 279, "symbol": "Flask.__init__ 中注册 static 路由" },
+          { "file": "src/flask/app.py", "startLine": 308, "endLine": 328, "symbol": "Flask.send_static_file" },
+          { "file": "src/flask/blueprints.py", "startLine": 82, "endLine": 102, "symbol": "Blueprint.send_static_file" }
+        ],
+        "mustMention": [
+          "Flask.__init__ 用 add_url_rule 注册 static 路由",
+          "使用 weakref.ref(self) 以避免引用环",
+          "send_static_file 内部走 send_from_directory",
+          "Blueprint 有自己的同名重复实现"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q13",
+      "question": "在 app 上注册模板 filter / test / global，和在 blueprint 上注册，它们落到 `jinja_env` 的方式有什么不同？为什么 blueprint 那边要用 `record_once`？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "app 侧是直接写：`App.add_template_filter`（src/flask/sansio/app.py 686-695 行）直接执行 `self.jinja_env.filters[name or f.__name__] = f`，`add_template_test`（727-740 行）和 `add_template_global`（765-777 行）分别是写 `jinja_env.tests` 和 `jinja_env.globals`，三者都是 `setupmethod` 装饰的同步方法。blueprint 侧只有 `app_template_filter` / `app_template_test` / `app_template_global` 这一组（普通 `template_filter` 在 Flask 3.1 中已不存在），它们是延迟登记的：`Blueprint.add_app_template_filter`（src/flask/sansio/blueprints.py 460-475 行）先定义一个 `register_template(state)` 闭包，闭包里执行 `state.app.jinja_env.filters[name or f.__name__] = f`，最后用 `self.record_once(register_template)` 登记。之所以是 `record_once` 而不是 `record`，是因为同一个蓝图可能以不同名字被注册多次，而 Jinja 环境是 app 级别的全局资源，重复写入没有意义；`record_once` 包了一层，只有 `state.first_registration` 为真时才调用真正的函数。",
+        "evidence": [
+          { "file": "src/flask/sansio/app.py", "startLine": 685, "endLine": 695, "symbol": "App.add_template_filter" },
+          { "file": "src/flask/sansio/blueprints.py", "startLine": 460, "endLine": 475, "symbol": "Blueprint.add_app_template_filter" }
+        ],
+        "mustMention": [
+          "app 侧直接写入 jinja_env.filters",
+          "blueprint 侧通过 record_once 延迟到注册时写入",
+          "blueprint 用的接口名是 app_template_filter",
+          "record_once 只在 first_registration 时执行"
+        ]
+      }
+    },
+    {
+      "id": "q14",
+      "question": "在启动代码或 CLI 里调用 `url_for` 时抛出 “Unable to build URLs outside an active request without 'SERVER_NAME' configured”，这个错误是从哪里抛出来的？正确的修法是什么？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "错误抛自 `Flask.url_for`（src/flask/app.py 1060-1101 行）。当 `_cv_request.get(None)` 为 None（不在请求上下文里）时，代码先看 `_cv_app.get(None)`：有 app context 就用 `app_ctx.url_adapter`，没有则调用 `self.create_url_adapter(None)`。而 `create_url_adapter(None)`（app.py 425-476 行）只有在 `config[\"SERVER_NAME\"]` 不为 None 时才返回 `self.url_map.bind(...)`，否则返回 None，于是 `url_for` 抛出这个 RuntimeError。修法有两种：配置 `SERVER_NAME`（并按需配置 `APPLICATION_ROOT`、`PREFERRED_URL_SCHEME`），或者用 `app.test_request_context()` 造一个请求上下文。还要注意语义差异：不在请求上下文时 `_external` 默认为 True，生成的是带 scheme 和域名的绝对 URL，而在请求里默认生成相对路径；另外构建失败时会转交 `handle_url_build_error`（src/flask/sansio/app.py 932-960 行）处理。",
+        "evidence": [
+          { "file": "src/flask/app.py", "startLine": 1078, "endLine": 1101, "symbol": "Flask.url_for 中无请求上下文的分支" },
+          { "file": "src/flask/app.py", "startLine": 468, "endLine": 476, "symbol": "Flask.create_url_adapter 中 request 为 None 的分支" }
+        ],
+        "mustMention": [
+          "错误在 Flask.url_for 中 url_adapter 为 None 时抛出",
+          "create_url_adapter(None) 需要 SERVER_NAME 才会返回适配器",
+          "不在请求上下文时 _external 默认为 True",
+          "可用 test_request_context 或配置 SERVER_NAME 解决"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q15",
+      "question": "运行时报 “Working outside of application context”，这个提示文案是在哪里定义和抛出的？为什么有时提示的是 application context、有时又是 request context？",
+      "category": "debugging",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "文案和抛出机制都在 `src/flask/globals.py`。`_no_app_msg`（17-23 行）是 “Working outside of application context...” 的提示，`_no_req_msg`（35-41 行）是 “Working outside of request context...” 的提示。`app_ctx`、`current_app`、`g` 都绑定到 ContextVar `_cv_app`（24-33 行），`request_ctx`、`request`、`session` 都绑定到 `_cv_request`（42-52 行），它们都是 `werkzeug.local.LocalProxy`。当绑定的 ContextVar 当前没有值时，LocalProxy 在取属性时会抛出构造时传入的 `unbound_message`。所以访问 `current_app` / `g` 需要应用上下文，访问 `request` / `session` 需要请求上下文；而请求上下文 push 时会自动带上应用上下文，因此在视图里两者都可用，在启动代码里只有 app context（`with app.app_context():`）可用。",
+        "evidence": [
+          { "file": "src/flask/globals.py", "startLine": 17, "endLine": 33, "symbol": "_no_app_msg 与 app 相关的 LocalProxy" },
+          { "file": "src/flask/globals.py", "startLine": 35, "endLine": 52, "symbol": "_no_req_msg 与 request 相关的 LocalProxy" }
+        ],
+        "mustMention": [
+          "提示文案定义在 src/flask/globals.py",
+          "基于 werkzeug LocalProxy 与 ContextVar 实现",
+          "app 相关代理使用 _no_app_msg",
+          "request 相关代理使用 _no_req_msg"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q16",
+      "question": "视图函数忘了写 `return`，或者返回了一个 Flask 不认识的类型，Flask 会抛出什么错误？错误信息是在哪段代码里拼出来的？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "逻辑在 `Flask.make_response`（src/flask/app.py 1129-1269 行）。返回值若是元组会先被拆解：3 元组直接拆成 `(body, status, headers)`，2 元组则根据第二项是 Headers/dict/tuple/list 还是别的来判断是 headers 还是 status，其他长度直接抛 TypeError。接着如果 `rv is None`（1211-1216 行），就抛 TypeError，提示 “The view function for {request.endpoint!r} did not return a valid response. The function either returned None or ended without a return statement.”。如果返回值既不是 str/bytes/bytearray/迭代器，也不是 dict/list、Response 实例或 WSGI 可调用对象，则走到最后的 else 分支（1248-1255 行）抛同样的 TypeError，并列出允许的返回类型。只有 dict 和 list 会被 `self.json.response(rv)` 转成 JSON 响应，生成器/迭代器会被转成流式响应。",
+        "evidence": [
+          { "file": "src/flask/app.py", "startLine": 1210, "endLine": 1216, "symbol": "Flask.make_response 中 rv is None 的处理" },
+          { "file": "src/flask/app.py", "startLine": 1248, "endLine": 1255, "symbol": "Flask.make_response 中非法返回类型的处理" }
+        ],
+        "mustMention": [
+          "错误来自 Flask.make_response",
+          "返回 None 时提示视图缺少 return 语句",
+          "允许的类型包括 str/bytes/dict/list/Response/WSGI callable",
+          "dict 与 list 会被转成 JSON 响应"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q17",
+      "question": "我在视图里改了 `session`，但响应里没有 `Set-Cookie` 头；或者只是读了一次 session，响应里却没有 `Vary: Cookie`。Flask 到底是怎么追踪 session 有没有被修改、被访问的？",
+      "category": "debugging",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "追踪分两层。`SessionMixin`（src/flask/sessions.py 24-54 行）定义了 `permanent`、`new`、`modified`、`accessed` 四个标志，其中 `accessed` 从 3.1.3 起改由请求上下文跟踪。`SecureCookieSession`（57-80 行）继承 `CallbackDict`，在 `__init__` 里传入 `on_update` 回调，字典内容一旦被更新就把 `self.modified = True`；注意嵌套的可变对象（如 `session[\"d\"][\"k\"] = 1`）不会触发 `CallbackDict` 的 on_update，需要手动设 `session.modified = True`。`accessed` 则是在 `RequestContext.session` 属性（src/flask/ctx.py 367-375 行）被访问时置 True，访问 `flask.session` 代理同样会触发。写回时 `SecureCookieSessionInterface.save_session`（sessions.py 337-385 行）先判断 `session.accessed` 决定是否 `response.vary.add(\"Cookie\")`；若 session 为空且被 modified 则调用 `response.delete_cookie(...)`；否则用 `should_set_cookie(app, session)`（233-247 行）判断——只有 `session.modified` 为真，或者 session 是 permanent 且 `SESSION_REFRESH_EACH_REQUEST` 为真时，才真正 `response.set_cookie(...)`。",
+        "evidence": [
+          { "file": "src/flask/sessions.py", "startLine": 73, "endLine": 80, "symbol": "SecureCookieSession.__init__ 中的 on_update" },
+          { "file": "src/flask/sessions.py", "startLine": 233, "endLine": 247, "symbol": "SessionInterface.should_set_cookie" },
+          { "file": "src/flask/ctx.py", "startLine": 367, "endLine": 375, "symbol": "RequestContext.session" }
+        ],
+        "mustMention": [
+          "SecureCookieSession 用 CallbackDict 的 on_update 回调设置 modified",
+          "accessed 在 RequestContext.session 属性被访问时置为 True",
+          "save_session 依据 should_set_cookie 决定是否调用 set_cookie",
+          "session 为空且被修改时调用 delete_cookie",
+          "嵌套可变对象的修改需要手动设置 session.modified"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q18",
+      "question": "我在蓝图上注册的 `before_request` 有时候根本没执行，有时候执行顺序和预期不一样。Flask 是靠什么决定这些回调要不要跑、按什么顺序跑的？",
+      "category": "debugging",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "关键在 `request.blueprints`。`preprocess_request`（src/flask/app.py 1271-1296 行）取 `names = (None, *reversed(request.blueprints))`，只有当蓝图名出现在 `self.before_request_funcs` 中才会执行该蓝图的回调；而 `request.blueprints`（src/flask/wrappers.py 180-195 行）是根据已匹配到的 `url_rule.endpoint` 算出来的，URL 匹配失败（存在 `routing_exception`）时它是空列表，蓝图级回调自然不会执行。顺序上，`request.blueprints` 返回的是从最内层到最外层的列表（由 `helpers._split_blueprint_path` 展开点号名得到），`reversed()` 之后变成最外层蓝图先执行、app 级最后执行。另一个常见坑是 `Blueprint._check_setup_finished`（src/flask/sansio/blueprints.py 213-221 行）：蓝图一旦被注册过（`_got_registered_once` 为真），之后再往蓝图上加路由或回调会因为 `setupmethod` 的检查抛出 AssertionError——这些新加的回调根本没进 `deferred_functions`，因此永远不会被调用。",
+        "evidence": [
+          { "file": "src/flask/app.py", "startLine": 1271, "endLine": 1296, "symbol": "Flask.preprocess_request" },
+          { "file": "src/flask/wrappers.py", "startLine": 180, "endLine": 195, "symbol": "Request.blueprints" },
+          { "file": "src/flask/sansio/blueprints.py", "startLine": 213, "endLine": 221, "symbol": "Blueprint._check_setup_finished" }
+        ],
+        "mustMention": [
+          "只有 request.blueprints 中的蓝图回调才会执行",
+          "URL 匹配失败时 blueprints 为空列表",
+          "reversed(request.blueprints) 使最外层蓝图先执行",
+          "蓝图注册后再添加回调会抛 AssertionError"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q19",
+      "question": "在 debug 模式下访问一个不存在的表单字段会抛 KeyError 而不是 400 Bad Request，这是 Flask 特意为之吗？相关代码在哪？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "是刻意的调试增强。`Request._load_form_data`（src/flask/wrappers.py 197-210 行）在 `current_app.debug` 为真、且请求的 mimetype 不是 `multipart/form-data`、且 `request.files` 为空时，调用 `debughelpers.attach_enctype_error_multidict(request)`。后者（src/flask/debughelpers.py 81-104 行）取出 `request.files` 当前的类，派生出子类 `newcls` 并重写 `__getitem__`：取不到 key 时，如果该 key 出现在 `request.form` 里（说明浏览器把普通字段传过来了），就抛出 `DebugFilesKeyError`（debughelpers.py 23-47 行），提示用户缺少 `enctype=\"multipart/form-data\"`；否则仍然抛原始的 KeyError。另外 `handle_user_exception`（src/flask/app.py 796-799 行）对 `BadRequestKeyError` 在 debug 模式或 `TRAP_BAD_REQUEST_ERRORS` 打开时会设置 `show_exception = True`，让调试器展示原始异常。",
+        "evidence": [
+          { "file": "src/flask/wrappers.py", "startLine": 197, "endLine": 210, "symbol": "Request._load_form_data" },
+          { "file": "src/flask/debughelpers.py", "startLine": 81, "endLine": 104, "symbol": "attach_enctype_error_multidict" }
+        ],
+        "mustMention": [
+          "只在 debug 模式下生效（current_app.debug）",
+          "attach_enctype_error_multidict 替换 request.files 的类",
+          "抛出 DebugFilesKeyError 提示缺少 enctype",
+          "BadRequestKeyError 在 debug 下会设置 show_exception"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q20",
+      "question": "Flask 源码里 `flask/app.py`、`flask/blueprints.py` 和 `flask/sansio/` 下的同名模块是什么关系？为什么要把代码拆成 sansio（无状态）和外层（有状态）两层？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`src/flask/sansio/app.py` 定义 `App(Scaffold)`（59 行），`src/flask/sansio/blueprints.py` 定义 `Blueprint(Scaffold)`（119 行），它们只包含与请求/响应 IO 状态无关的通用能力：路由注册、模板 filter/test/global 注册、错误处理器注册、shell context 等。外层 `src/flask/app.py` 的 `Flask(App)`（81 行）补上 WSGI 相关能力：`wsgi_app`、`full_dispatch_request`、`make_response`、上下文管理等；`src/flask/blueprints.py` 的 `Blueprint(SansioBlueprint)`（18 行）补上蓝图特有的静态文件服务与 `open_resource`。两层共享的基类是 `src/flask/sansio/scaffold.py` 里的 `Scaffold`（52 行），`route`/`get`/`post` 等路由装饰器、`before_request`/`after_request`/`teardown_request` 注册、`errorhandler`、`endpoint` 都放在这一层。拆分的目的是让不涉及 IO 状态的核心逻辑可以独立复用与测试，同时让 Flask 自身与 Blueprint 共享同一套注册语义而不必互相继承。",
+        "evidence": [
+          { "file": "src/flask/sansio/app.py", "startLine": 59, "endLine": 60, "symbol": "class App(Scaffold)" },
+          { "file": "src/flask/app.py", "startLine": 81, "endLine": 82, "symbol": "class Flask(App)" },
+          { "file": "src/flask/sansio/blueprints.py", "startLine": 119, "endLine": 120, "symbol": "class Blueprint(Scaffold)" }
+        ],
+        "mustMention": [
+          "sansio/app.py 定义 App，sansio/blueprints.py 定义 Blueprint",
+          "Flask 继承 App，Blueprint 继承 SansioBlueprint",
+          "Scaffold 是两者共享的基类",
+          "sansio 层不包含 WSGI 请求响应相关逻辑"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q21",
+      "question": "Flask 源码里那些不打算对外暴露的内部辅助函数是怎么命名的？举几个例子并说明它们放在哪里。",
+      "category": "convention",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "约定是加单下划线前缀表示模块内部私有，例如 `src/flask/helpers.py` 的 `_split_blueprint_path`（634-641 行）和 `_prepare_send_file_kwargs`（394-404 行）、`src/flask/sansio/scaffold.py` 的 `_endpoint_from_view_func`（701-706 行）与 `_find_package_path`（709 行起）、`src/flask/sessions.py` 的 `_lazy_sha1`（276-281 行）、`src/flask/app.py` 的 `_make_timedelta`（74-78 行）。这些名字不会出现在 `src/flask/__init__.py` 的公开导出列表里——该文件用 `from .x import y as y` 的显式形式把公开 API 暴露出去并支持类型检查器做静态分析（`__all__` 语义），没有被导出的即视为内部实现，因此改名不会破坏公开 API 的兼容性。",
+        "evidence": [
+          { "file": "src/flask/sansio/scaffold.py", "startLine": 701, "endLine": 706, "symbol": "_endpoint_from_view_func" },
+          { "file": "src/flask/helpers.py", "startLine": 634, "endLine": 641, "symbol": "_split_blueprint_path" },
+          { "file": "src/flask/sessions.py", "startLine": 276, "endLine": 281, "symbol": "_lazy_sha1" }
+        ],
+        "mustMention": [
+          "内部辅助函数统一用单下划线前缀命名",
+          "例如 _split_blueprint_path、_endpoint_from_view_func、_lazy_sha1",
+          "flask/__init__.py 只显式导出公开 API",
+          "下划线前缀表示不对外承诺兼容"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q22",
+      "question": "`src/flask/blueprints.py` 里 `get_send_file_max_age` 和 `send_static_file` 的 docstring 都写着 “Note this is a duplicate of the same method in the Flask class.”，为什么要复制一份而不是直接复用 Flask 的实现？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "因为 `Blueprint` 继承的是 `sansio.blueprints.Blueprint`（再往上是 `Scaffold`），而不是 `Flask`；`Scaffold` 上并没有 `send_static_file` / `get_send_file_max_age` 这些方法，`Flask` 也不在 Blueprint 的继承链上，Blueprint 与 Flask 之间不能形成继承关系（否则会让 blueprint 依赖 app 的全部状态，甚至产生耦合甚至循环）。因此 blueprint 必须自己提供一份。两份实现逻辑基本一致：`Blueprint.get_send_file_max_age`（src/flask/blueprints.py 55-80 行）从 `current_app.config[\"SEND_FILE_MAX_AGE_DEFAULT\"]` 取值，为 None 表示不做缓存（改用条件请求），是 timedelta 则转成秒数；`Blueprint.send_static_file`（82-102 行）检查 `has_static_folder` 后交给 `send_from_directory`。这种「每个 Scaffold 子类各自实现自己需要的 WSGI 相关行为」是 Flask 源码中反复出现的约定，源码用注释显式标注出重复实现，避免读者误以为是遗漏。",
+        "evidence": [
+          { "file": "src/flask/blueprints.py", "startLine": 55, "endLine": 80, "symbol": "Blueprint.get_send_file_max_age" },
+          { "file": "src/flask/blueprints.py", "startLine": 82, "endLine": 102, "symbol": "Blueprint.send_static_file" }
+        ],
+        "mustMention": [
+          "Blueprint 继承 SansioBlueprint 而不是 Flask",
+          "Scaffold 上没有这些方法，所以必须各自实现",
+          "get_send_file_max_age 从 current_app.config 读取 SEND_FILE_MAX_AGE_DEFAULT",
+          "docstring 用 'duplicate of the same method' 标注重复实现"
+        ]
+      }
+    }
+  ]
+}

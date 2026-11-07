@@ -1,0 +1,222 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+:root {
+  /* 画布用近白灰，卡片留纯白：层次靠底色差而不是靠重描边。 */
+  --background: #f8fafc;
+  --foreground: #1f2329;
+  --card: #ffffff;
+  --card-foreground: #1f2329;
+  --popover: #ffffff;
+  --popover-foreground: #1f2329;
+  --primary: #1f2329;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #1f2329;
+  --muted: #f1f5f9;
+  --muted-foreground: #646a73;
+  --accent: #eaeef3;
+  --accent-foreground: #1f2329;
+  --destructive: #e7000b;
+  --border: #e5e8ec;
+  --input: #e5e8ec;
+  --ring: #2d68ff;
+  --link: #2d68ff;
+  --chart-1: #f54900;
+  --chart-2: #009689;
+  --chart-3: #104e64;
+  --chart-4: #ffb900;
+  --chart-5: #fe9a00;
+  --radius: 0.75rem;
+  --sidebar: #fafafa;
+  --sidebar-foreground: #171717;
+  --sidebar-primary: #171717;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: #f5f5f5;
+  --sidebar-accent-foreground: #171717;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: #a1a1a1;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-link: var(--link);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--site-font);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+/* 深色模式由 <html class="dark"> 驱动，脚本会在首帧前落好这个类。
+   品牌橙在深色下提亮一档，其余色相跟着换，保证图表在暗背景上仍可读。 */
+.dark {
+  --background: #0f1115;
+  --foreground: #e6e8eb;
+  --card: #171a20;
+  --card-foreground: #e6e8eb;
+  --popover: #171a20;
+  --popover-foreground: #e6e8eb;
+  --primary: #e6e8eb;
+  --primary-foreground: #0f1115;
+  --secondary: #1e222a;
+  --secondary-foreground: #e6e8eb;
+  --muted: #1e222a;
+  --muted-foreground: #949aa4;
+  --accent: #262b34;
+  --accent-foreground: #e6e8eb;
+  --destructive: #ff6467;
+  --border: #262b34;
+  --input: #30353f;
+  --ring: #5b8cff;
+  --link: #5b8cff;
+  --chart-1: #ff7333;
+  --chart-2: #2bbbad;
+  --chart-3: #38bdf8;
+  --chart-4: #fbbf24;
+  --chart-5: #fb923c;
+  --sidebar: #171717;
+  --sidebar-foreground: #ededed;
+  --sidebar-primary: #ff7333;
+  --sidebar-primary-foreground: #ededed;
+  --sidebar-accent: #262626;
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: #ffffff1a;
+  --sidebar-ring: #737373;
+}
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--site-font);
+  font-size: 16px;
+  line-height: 26px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 设计参数使用工程原有样式管理，工作台只临时覆盖变量。 */
+:root {
+  --site-font: "PingFang SC", "PingFang TC", "Hiragino Sans GB",
+    "Microsoft YaHei", "WenQuanYi Micro Hei", -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", Arial, sans-serif;
+  --site-radius: 10px;
+  --site-space: 1;
+  --site-type: 1;
+  --site-motion: 1;
+}
+
+@theme inline {
+  --spacing: calc(0.25rem * var(--site-space));
+  --text-xs: calc(.75rem * var(--site-type));
+  --text-sm: calc(.875rem * var(--site-type));
+  --text-base: calc(1rem * var(--site-type));
+  --text-lg: calc(1.125rem * var(--site-type));
+  --text-xl: calc(1.25rem * var(--site-type));
+  --text-2xl: calc(1.5rem * var(--site-type));
+  --text-3xl: calc(1.875rem * var(--site-type));
+  --text-4xl: calc(2.25rem * var(--site-type));
+  --text-5xl: calc(3rem * var(--site-type));
+  --text-6xl: calc(3.75rem * var(--site-type));
+  --text-7xl: calc(4.5rem * var(--site-type));
+  --text-8xl: calc(6rem * var(--site-type));
+  --text-9xl: calc(8rem * var(--site-type));
+  --default-transition-duration: calc(150ms * var(--site-motion));
+}
+@layer base {
+  /* Tailwind v4 的 preflight 把边框颜色留成 currentColor，
+     卡片描边会跟着正文一起变深；这里统一收回到边框色变量。 */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+  button, a { transition-duration: calc(150ms * var(--site-motion)); }
+  @media (prefers-reduced-motion: reduce) {
+    button, a { transition-duration: 0ms; }
+  }
+}
+
+/* 表格排版对齐混元研究页的留白节奏：单元格 12px 24px，表头浅底，
+   表格本身是一张白卡而不是一堆飘着的行。这段刻意不放在 layer 里，
+   以便盖住各表格自己写的紧凑 padding。 */
+.eval-table {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--card);
+}
+.eval-table th,
+.eval-table td {
+  padding: 12px 24px;
+}
+.eval-table thead th {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.eval-table thead th:first-child {
+  border-top-left-radius: var(--radius);
+}
+.eval-table thead th:last-child {
+  border-top-right-radius: var(--radius);
+}
+.eval-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+/* 列数很多的表格塞不下 24px 的横向留白，单独用紧凑档。 */
+.eval-table-dense th,
+.eval-table-dense td {
+  padding: 10px 14px;
+}
