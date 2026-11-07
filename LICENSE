@@ -19,15 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-本项目在评测时会拉取以下第三方包作为被测语料。它们不随本仓库分发，
-由 corpus/fetch.sh 从 PyPI 官方获取，各自保留原始许可：
-
-- Flask 3.1.3 — BSD-3-Clause
-- Jinja2 3.1.6 — BSD-3-Clause
-- Requests 2.34.2 — Apache-2.0
-- Werkzeug 3.1.9 — BSD-3-Clause
-
-站点前端基于 Qoder Sites 的 vinext-starter 模板改写，出处与许可见 site/PROVENANCE.md。

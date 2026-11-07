@@ -55,4 +55,5 @@ cd site && npm ci && npm run dev
 
 ## 许可
 
-本仓库代码见 [LICENSE](LICENSE)。被测仓库各自的许可保留在语料目录内。
+本仓库代码采用 MIT 许可，见 [LICENSE](LICENSE)。被测仓库各自的许可保留在语料目录内，
+第三方组件清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
