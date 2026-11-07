@@ -190,7 +190,16 @@ export interface EvalRun {
   origin?: "strategy-compare" | "ladder";
   /** 属于阶梯的哪一轮 */
   ladderStepId?: string;
+  /** 被测 Agent 用的模型 id。多模型对比时不同档案会留下不同的记录。 */
   model: string;
+  /**
+   * 评判用的模型 id。
+   *
+   * 默认跟被测模型是同一个；为了排除 judge 偏袒自己那家模型，
+   * 可以用 --judge-model 指定别家的模型来打分。
+   * 老记录没有这个字段，那时的 judge 就是被测模型本身。
+   */
+  judgeModel?: string;
   startedAt: string;
   finishedAt: string;
   summary: RunSummary;

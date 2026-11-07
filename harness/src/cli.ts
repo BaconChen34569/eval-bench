@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { runEvaluation } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
-import { configFromEnv, listModels, tryConfigFromEnv } from "./llm.ts";
+import { listModels } from "./llm.ts";
+import { discoverProfiles, resolveProfile, type ReadyProfile } from "./profiles.ts";
 import { LADDER, runLadder } from "./ladder.ts";
 import { readBaseline } from "./baseline.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
@@ -27,6 +28,9 @@ import type {
  *   node --experimental-strip-types src/cli.ts ladder    <dataset.json> <repoRoot> [--out report.json] [--reuse report.json]
   node --experimental-strip-types src/cli.ts report    <run.json...> [--out report.json]
  *   node --experimental-strip-types src/cli.ts models
+
+ * 换模型跑：--model qwen；换打分模型：--judge-model glm。
+ * 两个参数只影响这一次调用，不改 .env。
  */
 
 export const STRATEGIES: Record<string, ChunkingStrategy> = {
@@ -69,14 +73,17 @@ const DEFAULT_RETRIEVAL: RetrievalConfig = {
 function usage(): never {
   console.error(
     `用法:
-  node --experimental-strip-types src/cli.ts experiment <dataset.json> <repoRoot> [--out report.json] [--baseline 旧报告.json]
+  node --experimental-strip-types src/cli.ts experiment <dataset.json> <repoRoot> [--out report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案]
   node --experimental-strip-types src/cli.ts recall <dataset.json> <repoRoot> [--out report.json]
-  node --experimental-strip-types src/cli.ts run <dataset.json> <repoRoot> <strategyId> [--out run.json] [--limit N]
-  node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json]
+  node --experimental-strip-types src/cli.ts run <dataset.json> <repoRoot> <strategyId> [--out run.json] [--limit N] [--model 档案] [--judge-model 档案]
+  node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案]
   node --experimental-strip-types src/cli.ts report <run.json...> [--out report.json]
-  node --experimental-strip-types src/cli.ts models
+  node --experimental-strip-types src/cli.ts models [--model 档案]
 
-可用策略: ${Object.keys(STRATEGIES).join(", ")}`,
+可用策略: ${Object.keys(STRATEGIES).join(", ")}
+
+模型档案在 harness/.env 里按前缀分组配置（如 LLM_ / QWEN_ / GLM_），
+--model 指定被测模型，--judge-model 指定打分模型，不给就用 .env 里的默认档案。`,
   );
   process.exit(1);
 }
@@ -84,6 +91,22 @@ function usage(): never {
 function flagValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+/**
+ * 这次跑用哪个模型打分、哪个模型被测。
+ *
+ * 默认两个都是 .env 里的默认档案；--judge-model 可以把打分换成别家模型，
+ * 用来排除 judge 偏袒自己那家模型的情况。
+ */
+function selectModels(
+  env: Record<string, string | undefined>,
+  args: string[],
+): { agent: ReadyProfile; judge: ReadyProfile } {
+  const agent = resolveProfile(env, flagValue(args, "--model"));
+  const judgeId = flagValue(args, "--judge-model");
+  const judge = judgeId ? resolveProfile(env, judgeId) : agent;
+  return { agent, judge };
 }
 
 async function readDataset(path: string): Promise<EvalDataset> {
@@ -165,7 +188,19 @@ async function main(): Promise<void> {
     }
 
     const runs: EvalRun[] = [];
-    const llm = command === "experiment" ? tryConfigFromEnv(process.env) : null;
+    let selection: { agent: ReadyProfile; judge: ReadyProfile } | null = null;
+    if (command === "experiment") {
+      try {
+        selection = selectModels(process.env, args);
+      } catch (error) {
+        console.log(
+          `\n${error instanceof Error ? error.message : String(error)}`,
+        );
+        console.log("跳过生成层评测（检索层结果不受影响）。");
+      }
+    }
+    const llm = selection?.agent.config ?? null;
+    const judgeLlm = selection?.judge.config ?? null;
     let judgeValidation: JudgeValidation = {
       sampled: 0,
       agreement: 0,
@@ -175,9 +210,13 @@ async function main(): Promise<void> {
       note: "尚未运行 judge 自检",
     };
 
-    if (command === "experiment" && llm) {
-      console.log(`\njudge 自检：让 judge 给人工参考答案打分（模型 ${llm.model}）`);
-      const validation = await validateJudge(dataset, llm, {
+    if (command === "experiment" && llm && judgeLlm) {
+      console.log(
+        `\n被测模型 ${selection!.agent.label}（${llm.model}）` +
+          `，打分模型 ${selection!.judge.label}（${judgeLlm.model}）`,
+      );
+      console.log(`\njudge 自检：让 judge 给人工参考答案打分（模型 ${judgeLlm.model}）`);
+      const validation = await validateJudge(dataset, judgeLlm, {
         onProgress: (done, total) =>
           console.log(`  (${done}/${total}) judge 自检`),
       });
@@ -195,6 +234,7 @@ async function main(): Promise<void> {
           chunking: strategy,
           retrieval: DEFAULT_RETRIEVAL,
           llm,
+          judgeLlm,
           successThreshold: 4,
           runId: `${strategy.id}-${Date.now()}`,
           onProgress: (done, total, message) =>
@@ -218,7 +258,7 @@ async function main(): Promise<void> {
       }
     } else if (command === "experiment") {
       console.log(
-        "\n未检测到 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL，跳过生成层评测（检索层结果不受影响）。",
+        "\n没有可用的模型档案，跳过生成层评测（检索层结果不受影响）。",
       );
     }
 
@@ -250,7 +290,12 @@ async function main(): Promise<void> {
     const limit = Number(flagValue(args, "--limit") ?? "0") || undefined;
 
     const dataset = await readDataset(datasetPath);
-    const llm = configFromEnv(process.env);
+    const { agent, judge } = selectModels(process.env, args);
+    const llm = agent.config;
+    const judgeLlm = judge.config;
+    console.log(
+      `被测模型 ${agent.label}（${llm.model}），打分模型 ${judge.label}（${judgeLlm.model}）`,
+    );
 
     let previous: ExperimentReport | null = null;
     if (reusePath) {
@@ -261,8 +306,8 @@ async function main(): Promise<void> {
     }
 
     // judge 自检必须在同一批协议里重跑：阶梯的分数全靠这把尺子。
-    console.log(`judge 自检：让 judge 给人工参考答案打分（模型 ${llm.model}）`);
-    const validation = await validateJudge(dataset, llm, {
+    console.log(`judge 自检：让 judge 给人工参考答案打分（模型 ${judgeLlm.model}）`);
+    const validation = await validateJudge(dataset, judgeLlm, {
       onProgress: (done, total) =>
         console.log(`  (${done}/${total}) judge 自检`),
     });
@@ -277,6 +322,7 @@ async function main(): Promise<void> {
       dataset,
       repoRoot,
       llm,
+      judgeLlm,
       successThreshold: 4,
       reuseRuns: [...(previous?.runs ?? []), ...(previous?.ladderRuns ?? [])],
       limit,
@@ -366,7 +412,9 @@ async function main(): Promise<void> {
     const limit = Number(flagValue(args, "--limit") ?? "0") || undefined;
 
     const dataset = await readDataset(datasetPath);
-    const llm = configFromEnv(process.env);
+    const { agent, judge } = selectModels(process.env, args);
+    const llm = agent.config;
+    const judgeLlm = judge.config;
 
     const run = await runEvaluation({
       dataset,
@@ -374,6 +422,7 @@ async function main(): Promise<void> {
       chunking: strategy,
       retrieval: DEFAULT_RETRIEVAL,
       llm,
+      judgeLlm,
       successThreshold: 4,
       runId: `${strategy.id}-${Date.now()}`,
       limit,
@@ -385,7 +434,8 @@ async function main(): Promise<void> {
 
     console.log("\n=== 运行摘要 ===");
     console.log(`策略          : ${strategy.label}`);
-    console.log(`模型          : ${run.model}`);
+    console.log(`被测模型      : ${agent.label}（${run.model}）`);
+    console.log(`打分模型      : ${judge.label}（${run.judgeModel}）`);
     console.log(`成功率(>=4分) : ${(run.summary.successRate * 100).toFixed(1)}%`);
     console.log(`平均证据召回  : ${(run.summary.avgEvidenceRecall * 100).toFixed(1)}%`);
     console.log(`平均延迟      : ${run.summary.avgLatencyMs.toFixed(0)}ms`);
@@ -430,11 +480,41 @@ async function main(): Promise<void> {
   }
 
   if (command === "models") {
-    const config = configFromEnv(process.env);
-    const models = await listModels(config);
-    console.log(`接口 ${config.baseUrl} 上可用的模型：`);
-    for (const id of models) console.log(`  ${id}`);
-    console.log(`\n把其中一个填进 .env 的 LLM_MODEL= 即可。`);
+    const only = flagValue(args, "--model");
+    const profiles = discoverProfiles(process.env).filter(
+      (profile) => !only || profile.id.toLowerCase() === only.toLowerCase(),
+    );
+    if (profiles.length === 0) {
+      const known = discoverProfiles(process.env)
+        .map((profile) => profile.id)
+        .join(" / ");
+      throw new Error(`没有名为 ${only} 的模型档案。已知的档案：${known || "无"}`);
+    }
+
+    console.log(`从 harness/.env 里读到 ${profiles.length} 个模型档案：\n`);
+    for (const profile of profiles) {
+      console.log(`[${profile.id}] ${profile.label}   （前缀 ${profile.prefix}_）`);
+      if (!profile.config) {
+        console.log(`  没配好，缺 ${profile.missing.join(" / ")}`);
+        console.log("");
+        continue;
+      }
+      console.log(`  接口 ${profile.baseUrl}`);
+      console.log(
+        profile.model
+          ? `  已选模型 ${profile.model}`
+          : `  还没选模型，填 ${profile.prefix}_MODEL=`,
+      );
+      try {
+        const models = await listModels(profile.config);
+        for (const id of models) console.log(`    ${id}`);
+      } catch (error) {
+        console.log(
+          `  取模型列表失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      console.log("");
+    }
     return;
   }
 

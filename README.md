@@ -44,6 +44,11 @@ node --experimental-strip-types src/cli.ts experiment \
 
 不需要密钥：这时只跑检索层。配置密钥的方法见 [harness/README.md](harness/README.md)。
 
+要跑多模型对比（同一套题换几个模型各跑一轮，看评测台能不能区分出模型好坏）：
+`harness/.env` 里按前缀配好几组服务商，`cp harness/.env.example harness/.env` 之后照着填，
+然后 `node --experimental-strip-types src/cli.ts run ... --model qwen`。
+写法见 [harness/README.md](harness/README.md)。
+
 站点：
 
 ```bash

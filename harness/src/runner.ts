@@ -25,6 +25,13 @@ export interface RunOptions {
   chunking: ChunkingStrategy;
   retrieval: RetrievalConfig;
   llm: LlmConfig;
+  /**
+   * 打分的模型。不给就用被测模型自己打分。
+   *
+   * 分开是为了排除「judge 偏袒自己那家模型」：多模型对比时，
+   * 被测模型和 judge 来自不同服务商，分数才站得住。
+   */
+  judgeLlm?: LlmConfig;
   successThreshold: number;
   runId: string;
   /** agent 提示词版本，横切分策略对比时固定为 base */
@@ -55,6 +62,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
     runId,
   } = options;
   const promptVersion: PromptVersion = options.promptVersion ?? "base";
+  const judgeLlm = options.judgeLlm ?? options.llm;
 
   const startedAt = new Date().toISOString();
   const files = await loadRepository(repoRoot);
@@ -86,7 +94,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
         promptVersion,
       );
       const judged = await judgeAnswer(
-        llm,
+        judgeLlm,
         question,
         answer.answer,
         chunksForPrompt
@@ -119,10 +127,11 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
           judgePrompt: judged.tokens.prompt,
           judgeCompletion: judged.tokens.completion,
         },
-        // agent 和 judge 都要花钱，两次调用一起算
+        // agent 和 judge 都要花钱，两次调用一起算。
+        // judge 可能是别家模型，单价不一样，分开算。
         cost:
           estimateCost(answer.tokens, llm.pricePerMillion) +
-          estimateCost(judged.tokens, llm.pricePerMillion),
+          estimateCost(judged.tokens, judgeLlm.pricePerMillion),
         failureKind: classifyFailure(
           {
             answerCitations: parseAnswerCitations(answer.answer),
@@ -174,6 +183,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
     promptVersion,
     codeVersion: CODE_VERSION,
     model: llm.model,
+    judgeModel: judgeLlm.model,
     startedAt,
     finishedAt: new Date().toISOString(),
     summary,

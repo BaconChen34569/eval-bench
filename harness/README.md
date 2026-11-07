@@ -99,6 +99,10 @@ node --experimental-strip-types src/cli.ts ladder \
 # 列出账号可用的模型 id，确认该填哪个模型名
 node --experimental-strip-types src/cli.ts models
 
+# 换一个被测模型跑一轮（语料、检索链路、judge 全部不变）
+node --experimental-strip-types src/cli.ts run \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model qwen
+
 # 改了失败归因规则后，重算已有报告的归因（不重新调用模型）
 node --experimental-strip-types scripts/reclassify.ts \
   out/report.json ../corpus/repos/flask-3.1.3
@@ -109,16 +113,68 @@ node --experimental-strip-types scripts/reclassify.ts \
 复制 `.env.example` 为 `.env` 后填写。`.env` 已被 `.gitignore` 忽略，
 **密钥不要提交，也不要贴进任何对话或命令行**。
 
+一个**档案**就是一组带前缀的环境变量 = 一家 OpenAI 兼容服务商：
+
 ```bash
-LLM_BASE_URL=https://api.deepseek.com
+# 默认档案（前缀 LLM_）
+LLM_PROFILE=deepseek          # 命令行里用的名字
+LLM_LABEL=DeepSeek            # 站上展示用的名字
+LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_API_KEY=sk-...
-LLM_MODEL=<用 `cli.ts models` 查到的 id>
-LLM_TEMPERATURE=0        # 推理模型请留空，它不支持这个参数
+LLM_MODEL=deepseek-flash
+LLM_TEMPERATURE=0             # 推理模型请留空，它不支持这个参数
 LLM_PRICE_CURRENCY=¥
+
+# 第二家（前缀随便起，比如 QWEN_）
+QWEN_PROFILE=qwen
+QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_API_KEY=sk-...
+QWEN_MODEL=qwen-plus
 ```
 
-任何 OpenAI 兼容接口都可以用：DeepSeek、阿里云百炼（`https://dashscope.aliyuncs.com/compatible-mode/v1`）、
-Kimi、本地 vLLM。换服务商只需要改这三个环境变量，评测逻辑一行都不用动。
+前缀决定档案归谁管，代码里没有写死是哪几家——想加第四家（比如 Kimi），
+在 `.env` 里照抄一段改个前缀就行，评测逻辑一行都不用动。
+跑 `cli.ts models` 可以看到 `.env` 里到底有哪些档案、各自接口上有哪些模型 id。
+
+任何 OpenAI 兼容接口都可以用：DeepSeek、阿里云百炼、智谱、Kimi、本地 vLLM。
+
+## 多模型对比：证明这把尺子有区分度
+
+一套评测台如果给强模型和弱模型打出同样的分，那它测的其实不是模型。
+所以同一份语料、同一套检索链路、同一把尺子，换几个模型各跑一轮，
+就能看出这套评测台到底能不能分辨出模型的好坏——以及不同模型的失败长什么样。
+
+```bash
+# 每个模型各跑一轮，最终配置（函数级切分 + 结构感知重排 + 术语桥）
+node --experimental-strip-types src/cli.ts run \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model deepseek --out out/run-deepseek.json
+node --experimental-strip-types src/cli.ts run \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model qwen --out out/run-qwen.json
+node --experimental-strip-types src/cli.ts run \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model glm --out out/run-glm.json
+
+# 合并成一份汇总
+node --experimental-strip-types src/cli.ts report \
+  out/run-deepseek.json out/run-qwen.json out/run-glm.json --out out/report-multi.json
+```
+
+汇总出来的 `runs` 里同一个切分方式会有多条（每个模型一条），而站点的策略矩阵是按切分方式取列的，
+所以这份汇总**不能直接替换** `out/report.json`——站上多模型那一段要单独从汇总里取数据。
+
+两点要注意：
+
+- **复用旧记录时必须同模型。** 换模型就是换被测对象，上一个模型的运行记录不会被复用，
+  否则等于什么都没测。judge 同理：换了打分模型，分数不在同一把尺子上，也不能复用。
+- **judge 可以单独指定。** 默认 judge 就是被测模型自己打分，这在小样本上问题不大，
+  但多模型对比时会变成显眼靶子。用 `--judge-model` 换成别家模型来打分，
+  被测模型的 token 按它的单价算，judge 的 token 按 judge 的单价算：
+
+  ```bash
+  node --experimental-strip-types src/cli.ts run \
+    datasets/flask.json ../corpus/repos/flask-3.1.3 function-level \
+    --model qwen --judge-model glm --out out/run-qwen-judged-by-glm.json
+  ```
+
 
 ## 成本是怎么算的
 

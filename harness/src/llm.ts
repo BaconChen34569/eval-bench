@@ -159,17 +159,25 @@ async function chatOnce(
         completion_tokens?: number;
         prompt_cache_hit_tokens?: number;
         prompt_cache_miss_tokens?: number;
+        prompt_tokens_details?: { cached_tokens?: number };
       };
     };
 
     const content = payload.choices?.[0]?.message?.content;
     if (!content) throw new LlmError("LLM 返回内容为空");
 
+    // DeepSeek 用 prompt_cache_hit_tokens 报缓存命中，
+    // 通义等走 OpenAI 通用协议的服务商用 prompt_tokens_details.cached_tokens。
+    const cacheHitTokens =
+      payload.usage?.prompt_cache_hit_tokens ??
+      payload.usage?.prompt_tokens_details?.cached_tokens ??
+      0;
+
     return {
       content,
       promptTokens: payload.usage?.prompt_tokens ?? 0,
       completionTokens: payload.usage?.completion_tokens ?? 0,
-      promptCacheHitTokens: payload.usage?.prompt_cache_hit_tokens ?? 0,
+      promptCacheHitTokens: cacheHitTokens,
       promptCacheMissTokens: payload.usage?.prompt_cache_miss_tokens ?? 0,
       latencyMs: 0,
     };
@@ -192,51 +200,69 @@ async function chatOnce(
 /** 环境里没有配置时返回 null，让离线评测流程能继续跑。 */
 export function tryConfigFromEnv(
   env: Record<string, string | undefined>,
+  prefix = "LLM",
 ): LlmConfig | null {
-  const baseUrl = env.LLM_BASE_URL;
-  const apiKey = env.LLM_API_KEY;
-  const model = env.LLM_MODEL;
+  const baseUrl = readEnv(env, `${prefix}_BASE_URL`);
+  const apiKey = readEnv(env, `${prefix}_API_KEY`);
+  const model = readEnv(env, `${prefix}_MODEL`);
   if (!baseUrl || !apiKey || !model) return null;
-  return buildConfig(env, baseUrl, apiKey, model);
+  return buildLlmConfig(env, prefix);
 }
 
 /** 从环境变量读取配置，缺失时给出明确提示而不是静默失败。 */
-export function configFromEnv(env: Record<string, string | undefined>): LlmConfig {
-  const baseUrl = env.LLM_BASE_URL;
-  const apiKey = env.LLM_API_KEY;
-  const model = env.LLM_MODEL;
+export function configFromEnv(
+  env: Record<string, string | undefined>,
+  prefix = "LLM",
+): LlmConfig {
+  const baseUrl = readEnv(env, `${prefix}_BASE_URL`);
+  const apiKey = readEnv(env, `${prefix}_API_KEY`);
+  const model = readEnv(env, `${prefix}_MODEL`);
   if (!baseUrl || !apiKey || !model) {
     throw new Error(
-      "缺少 LLM 配置，需要 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL 三个环境变量",
+      `缺少 ${prefix} 配置，需要 ${prefix}_BASE_URL / ${prefix}_API_KEY / ${prefix}_MODEL 三个环境变量`,
     );
   }
-  return buildConfig(env, baseUrl, apiKey, model);
+  return buildLlmConfig(env, prefix);
 }
 
-function buildConfig(
+/** 空字符串和纯空格都当作没填，避免 .env 里留空占位时被当成已配置。 */
+function readEnv(
   env: Record<string, string | undefined>,
-  baseUrl: string,
-  apiKey: string,
-  model: string,
+  key: string,
+): string | undefined {
+  const value = env[key]?.trim();
+  return value ? value : undefined;
+}
+
+/**
+ * 按前缀拼出一份 LLM 配置。
+ *
+ * 前缀让同一个 .env 里能放好几家服务商：LLM_ / QWEN_ / GLM_ 各一组，
+ * 各自带自己的接口地址、密钥、模型 id 和单价。
+ */
+export function buildLlmConfig(
+  env: Record<string, string | undefined>,
+  prefix: string,
 ): LlmConfig {
-  const temperature = env.LLM_TEMPERATURE?.trim();
-  const maxTokens = env.LLM_MAX_TOKENS?.trim();
+  const temperature = readEnv(env, `${prefix}_TEMPERATURE`);
+  const maxTokens = readEnv(env, `${prefix}_MAX_TOKENS`);
+  const promptPrice = readEnv(env, `${prefix}_PRICE_PROMPT`);
+  const completionPrice = readEnv(env, `${prefix}_PRICE_COMPLETION`);
+  const cacheHitPrice = readEnv(env, `${prefix}_PRICE_PROMPT_CACHE_HIT`);
   return {
-    baseUrl,
-    apiKey,
-    model,
+    baseUrl: readEnv(env, `${prefix}_BASE_URL`) ?? "",
+    apiKey: readEnv(env, `${prefix}_API_KEY`) ?? "",
+    model: readEnv(env, `${prefix}_MODEL`) ?? "",
     temperature: temperature ? Number(temperature) : undefined,
     maxTokens: maxTokens ? Number(maxTokens) : undefined,
-    pricePerMillion: env.LLM_PRICE_PROMPT
+    pricePerMillion: promptPrice
       ? {
-          prompt: Number(env.LLM_PRICE_PROMPT),
-          completion: Number(env.LLM_PRICE_COMPLETION ?? "0"),
-          cacheHit: env.LLM_PRICE_PROMPT_CACHE_HIT
-            ? Number(env.LLM_PRICE_PROMPT_CACHE_HIT)
-            : undefined,
+          prompt: Number(promptPrice),
+          completion: Number(completionPrice ?? "0"),
+          cacheHit: cacheHitPrice ? Number(cacheHitPrice) : undefined,
         }
       : undefined,
-    currency: env.LLM_PRICE_CURRENCY?.trim() || undefined,
+    currency: readEnv(env, `${prefix}_PRICE_CURRENCY`),
   };
 }
 

@@ -256,10 +256,35 @@ function sameConfig(
   );
 }
 
+/**
+ * 这条运行记录能不能在当前这轮直接复用。
+ *
+ * 除了配置一致，还得是同一个模型跑的：换模型就是换被测对象，
+ * 把上一个模型的记录当成这个模型的结果，等于什么都没测。
+ * judge 同理——换了打分模型，分数不在同一把尺子上，不能复用。
+ *
+ * 老记录没有 judgeModel 字段，那时 judge 就是被测模型本身。
+ */
+export function reusableForStep(
+  run: EvalRun,
+  step: LadderConfig,
+  expectedCases: number,
+  models: { agent: string; judge: string },
+): boolean {
+  const runJudge = run.judgeModel ?? run.model;
+  return (
+    sameConfig(run, step, expectedCases) &&
+    run.model === models.agent &&
+    runJudge === models.judge
+  );
+}
+
 export interface LadderOptions {
   dataset: EvalDataset;
   repoRoot: string;
   llm: LlmConfig;
+  /** 打分的模型，不给就用被测模型自己打分 */
+  judgeLlm?: LlmConfig;
   successThreshold: number;
   /** 已有的运行记录，配置一致的轮次直接复用，不再花钱重跑 */
   reuseRuns?: EvalRun[];
@@ -276,6 +301,8 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
   const files = await loadRepository(options.repoRoot);
   const steps: LadderStep[] = [];
   const runs: EvalRun[] = [];
+  const judgeLlm = options.judgeLlm ?? options.llm;
+  const models = { agent: options.llm.model, judge: judgeLlm.model };
 
   for (const [position, step] of LADDER.entries()) {
     const measurement = measureRetrieval(
@@ -286,7 +313,7 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
     );
 
     const reusable = options.reuseRuns?.find((run) =>
-      sameConfig(run, step, options.dataset.questions.length),
+      reusableForStep(run, step, options.dataset.questions.length, models),
     );
     let run: EvalRun;
 
@@ -306,6 +333,7 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
         chunking: step.chunking,
         retrieval: step.retrieval,
         llm: options.llm,
+        judgeLlm,
         successThreshold: options.successThreshold,
         runId: `ladder-${step.id}-${started}`,
         promptVersion: step.promptVersion,
