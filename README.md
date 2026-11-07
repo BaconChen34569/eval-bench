@@ -5,6 +5,8 @@
 
 在线版：https://copilot-eval-bench-fzlro45ljfz.qoder.zone
 
+代码仓库：https://github.com/BaconChen34569/eval-bench
+
 不想装环境也可以直接下载打包好的源码（免注册、免密钥）：
 https://copilot-eval-bench-fzlro45ljfz.qoder.zone/eval-bench-source.zip
 

@@ -196,6 +196,7 @@ cd ../site && npm run dev
 
 **⑤ 最终产物**：
 - 在线站点：https://copilot-eval-bench-fzlro45ljfz.qoder.zone
+- **开源仓库（MIT 许可，可直接 clone）**：https://github.com/BaconChen34569/eval-bench
 - **源码包（免注册直接下载）**：https://copilot-eval-bench-fzlro45ljfz.qoder.zone/eval-bench-source.zip —— 解压即含评测流水线 + 评测集 + 语料脚本 + 站点源码
 - 评测流水线源码：`harness/`（TypeScript，零运行时依赖，Node 原生跑）
 - 评测集：`harness/datasets/`（22 题，每题带人工标注的证据位置与参考答案）
