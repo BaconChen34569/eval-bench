@@ -196,7 +196,7 @@ export function ProjectComparisonSection() {
         </CardShell>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="table-scroll overflow-x-auto">
         <table className="eval-table w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
@@ -308,7 +308,7 @@ function CategoryBreakdown() {
   const rows = multiProject.rows;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-col gap-2">
         <h3 className="text-base font-semibold">分类别看：尺子在哪一类题上失灵</h3>
         <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -316,7 +316,7 @@ function CategoryBreakdown() {
           每一格是「答对题数 / 该类总题数」，颜色越深说明这一类答得越准。
         </p>
       </div>
-      <div className="overflow-x-auto">
+      <div className="table-scroll overflow-x-auto">
         <table className="eval-table w-full min-w-[560px] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
@@ -382,7 +382,7 @@ function CardShell({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+    <div className="min-w-0 rounded-xl border bg-card px-5 py-4 shadow-sm">
       <div className="mb-3">
         <div className="text-base font-semibold">{title}</div>
         <div className="mt-1 text-xs leading-relaxed text-muted-foreground">

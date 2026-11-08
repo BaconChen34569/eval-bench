@@ -150,7 +150,7 @@ export function AgentReplay() {
                 type="button"
                 onClick={() => setFilter(id)}
                 aria-pressed={filter === id}
-                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                className={`inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors ${
                   filter === id
                     ? "border-transparent bg-primary text-primary-foreground"
                     : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -180,7 +180,7 @@ export function AgentReplay() {
                 }}
                 aria-pressed={active}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] tabular-nums transition-colors",
+                  "flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 font-mono text-xs tabular-nums transition-colors",
                   active
                     ? "border-transparent bg-foreground text-background"
                     : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -206,7 +206,7 @@ export function AgentReplay() {
         </p>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4">
         <div className="flex flex-col gap-2 rounded-xl border-l-2 border-border bg-card px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -238,7 +238,7 @@ export function AgentReplay() {
               <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="inline-flex min-h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 {expanded ? "收起" : "展开全文"}
               </button>
@@ -246,7 +246,7 @@ export function AgentReplay() {
           </div>
           <div
             className={cn(
-              "relative px-4 py-3 [&_code]:break-all",
+              "relative px-4 py-3 [&_code]:break-words",
               !expanded && "max-h-[420px] overflow-hidden",
             )}
           >
@@ -343,7 +343,7 @@ export function AgentReplay() {
                       >
                         {hit ? "●" : "○"}
                       </span>
-                      <span className="min-w-0 break-all">
+                      <span className="min-w-0 break-words">
                         {citation.file}:{citation.startLine}-{citation.endLine}
                       </span>
                     </li>

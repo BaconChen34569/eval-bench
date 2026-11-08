@@ -94,7 +94,7 @@ export function DataView() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="table-scroll overflow-x-auto">
             <table className="eval-table eval-table-dense w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -168,7 +168,7 @@ export function DataView() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="table-scroll overflow-x-auto">
             <table className="eval-table eval-table-dense w-full min-w-[820px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -252,7 +252,7 @@ export function DataView() {
             placeholder="筛选题号或题干，例如 q07"
             className="mb-4 max-w-sm"
           />
-          <div className="overflow-x-auto">
+          <div className="table-scroll overflow-x-auto">
             <table className="eval-table eval-table-dense w-full min-w-[900px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -329,7 +329,7 @@ export function DataView() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="table-scroll overflow-x-auto">
               <table className="eval-table eval-table-dense w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -396,7 +396,7 @@ export function DataView() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
+            <div className="table-scroll overflow-x-auto">
               <table className="eval-table eval-table-dense w-full min-w-[820px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -453,7 +453,7 @@ export function DataView() {
               </table>
             </div>
 
-            <div className="mt-4 overflow-x-auto">
+            <div className="table-scroll mt-4 overflow-x-auto">
               <table className="eval-table eval-table-dense w-full min-w-[620px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -487,7 +487,7 @@ export function DataView() {
               </table>
             </div>
 
-            <div className="mt-4 overflow-x-auto">
+            <div className="table-scroll mt-4 overflow-x-auto">
               <table className="eval-table eval-table-dense w-full min-w-[620px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">

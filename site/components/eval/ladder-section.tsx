@@ -220,6 +220,7 @@ export function LadderSection() {
                 stroke="var(--color-recall)"
                 strokeWidth={2}
                 dot={{ r: 3 }}
+                isAnimationActive={false}
               />
               <Line
                 dataKey="successRate"
@@ -227,6 +228,7 @@ export function LadderSection() {
                 stroke="var(--color-successRate)"
                 strokeWidth={2}
                 dot={{ r: 3 }}
+                isAnimationActive={false}
               />
               <ChartLegend content={<ChartLegendContent />} />
             </LineChart>
@@ -272,7 +274,7 @@ export function LadderSection() {
                   />
                 }
               />
-              <Bar dataKey="context" radius={[4, 4, 0, 0]}>
+              <Bar dataKey="context" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                 {cost.map((item) => (
                   <Cell key={item.label} fill="var(--color-context)" />
                 ))}
@@ -289,7 +291,7 @@ export function LadderSection() {
         </CardShell>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="table-scroll overflow-x-auto">
         <table className="eval-table w-full min-w-[820px] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
@@ -399,7 +401,7 @@ function FlipAnalysis() {
   const alwaysPassed = rows.filter((row) => row.fixedAt === 0);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-col gap-2">
         <h3 className="text-base font-semibold">逐题翻转：到底修好了哪几道题</h3>
         <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -425,7 +427,7 @@ function FlipAnalysis() {
             哪道题在第几轮被修好
           </span>
         </summary>
-        <div className="overflow-x-auto px-4 pb-4">
+        <div className="table-scroll overflow-x-auto px-4 pb-4">
           <table className="w-full min-w-[560px] border-separate border-spacing-0.5 text-sm">
           <thead>
             <tr>
@@ -516,7 +518,7 @@ function CardShell({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+    <div className="min-w-0 rounded-xl border bg-card px-5 py-4 shadow-sm">
       <div className="mb-3">
         <div className="text-base font-semibold">{title}</div>
         <div className="mt-1 text-xs leading-relaxed text-muted-foreground">

@@ -35,7 +35,7 @@ export function StrategyQualityChart() {
   }));
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <ChartContainer config={qualityConfig} className="h-[280px] w-full">
         <BarChart data={data} margin={{ left: 4, right: 4, top: 16 }}>
           <CartesianGrid vertical={false} />
@@ -49,9 +49,9 @@ export function StrategyQualityChart() {
             tickFormatter={(value: number) => `${Math.round(value * 100)}%`}
           />
           <ChartTooltip content={<ChartTooltipContent />} />
-          <Bar dataKey="recallAt1" fill="var(--color-recallAt1)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="recallAt3" fill="var(--color-recallAt3)" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="recallAt6" fill="var(--color-recallAt6)" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="recallAt1" fill="var(--color-recallAt1)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="recallAt3" fill="var(--color-recallAt3)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          <Bar dataKey="recallAt6" fill="var(--color-recallAt6)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ChartContainer>
       <details className="group rounded-lg border bg-secondary px-3 py-2">
@@ -94,7 +94,7 @@ export function StrategyCostChart() {
   }));
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex min-w-0 flex-col gap-3">
       <ChartContainer config={costConfig} className="h-[280px] w-full">
         <BarChart data={data} margin={{ left: 4, right: 4, top: 16 }}>
           <CartesianGrid vertical={false} />
@@ -125,7 +125,7 @@ export function StrategyCostChart() {
               />
             }
           />
-          <Bar dataKey="context" radius={[4, 4, 0, 0]}>
+          <Bar dataKey="context" radius={[4, 4, 0, 0]} isAnimationActive={false}>
             {data.map((item) => (
               <Cell key={item.label} fill="var(--color-context)" />
             ))}

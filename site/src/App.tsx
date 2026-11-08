@@ -381,7 +381,7 @@ export default function App() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
       <nav className="sticky top-0 z-20 border-b bg-background">
-        <div className="mx-auto flex w-full max-w-6xl items-center gap-6 px-5 py-3.5 text-[13px] sm:px-8">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-5 py-3.5 text-[13px] sm:gap-6 sm:px-8">
           <a
             href="#top"
             className="shrink-0 font-semibold tracking-tight"
@@ -396,7 +396,7 @@ export default function App() {
           {view === "story" ? (
             <>
               {/* 十个章节标题平铺必然放不下，改为按章分组：序号 + 章内小标题。 */}
-              <nav className="hidden flex-1 items-center gap-1 overflow-x-auto scrollbar-none lg:flex">
+              <nav className="table-scroll hidden flex-1 items-center gap-1 overflow-x-auto scrollbar-none lg:flex">
                 {CHAPTERS.map((chapter, chapterIndex) => (
                   <div
                     key={chapter.id}
@@ -434,7 +434,7 @@ export default function App() {
               <div className="min-w-0 flex-1 lg:hidden">
                 <NativeSelect
                   size="sm"
-                  className="truncate"
+                  className="truncate text-[13px]"
                   value={activeSection}
                   aria-label="章节导航"
                   onChange={(event) => {
@@ -452,8 +452,11 @@ export default function App() {
               </div>
             </>
           ) : (
-            <span className="hidden flex-1 text-muted-foreground lg:block">
-              数据视图：每个指标都可查、可筛、可导出
+            <span className="min-w-0 flex-1 truncate text-xs leading-tight text-muted-foreground lg:text-[13px]">
+              <span className="sm:hidden">指标可查 · 可筛 · 可导出</span>
+              <span className="hidden sm:inline">
+                数据视图：每个指标都可查、可筛、可导出
+              </span>
             </span>
           )}
 
@@ -474,7 +477,7 @@ export default function App() {
                   type="button"
                   onClick={() => setView(id)}
                   aria-pressed={view === id}
-                  className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  className={`rounded px-2.5 py-1 text-xs transition-colors ${
                     view === id
                       ? "bg-accent font-medium text-foreground"
                       : "text-muted-foreground hover:text-foreground"
@@ -908,7 +911,7 @@ export default function App() {
                       runId · 起止时间 · 单次成本
                     </span>
                   </summary>
-                  <div className="overflow-x-auto px-4 pb-4">
+                  <div className="table-scroll overflow-x-auto px-4 pb-4">
                     <table className="eval-table w-full min-w-[640px] text-sm">
                       <thead>
                         <tr className="border-b text-left text-xs text-muted-foreground">
@@ -992,7 +995,7 @@ export default function App() {
               </CardContent>
             </Card>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-3">
               <h3 className="text-base font-semibold">生成层失败归因</h3>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
                 这里的失败类型不是听模型自己说的，是按 ground truth 判的：先看它有没有引用到仓库里根本不存在的位置（编造内容），
@@ -1015,7 +1018,7 @@ export default function App() {
                       {run.summary.successThreshold} 分）
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
+                  <CardContent className="flex min-w-0 flex-col gap-3">
                     {failed.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
                         全部题目都达标。
@@ -1260,7 +1263,7 @@ export default function App() {
                     题没有命中任何一条标准证据
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent className="flex min-w-0 flex-col gap-3">
                   {byCategory.size === 0 && (
                     <p className="text-sm text-muted-foreground">
                       全部题目都在 top-6 内命中了证据。
@@ -1440,7 +1443,7 @@ export default function App() {
                 不需要密钥，几分钟就能跑出和本页一模一样的检索层数字。
               </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col gap-4">
+            <CardContent className="flex min-w-0 flex-col gap-4">
               <Button asChild size="lg" className="w-fit">
                 <a
                   href={REPO_URL}
@@ -1472,14 +1475,14 @@ export default function App() {
                       "三种切分策略的 recall@1/3/6 与 MRR 会打在终端上，应当和这页完全一致。生成层需要你自己的模型密钥。",
                   },
                 ].map((item) => (
-                  <div key={item.step} className="rounded-lg border bg-secondary/40 p-4">
+                  <div key={item.step} className="min-w-0 rounded-lg border bg-secondary/40 p-4">
                     <div className="flex items-center gap-2">
                       <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
                         {item.step}
                       </span>
                       <span className="text-sm font-medium">{item.title}</span>
                     </div>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground wrap-anywhere">
                       {item.detail}
                     </p>
                   </div>
@@ -1495,7 +1498,7 @@ export default function App() {
 
           <Card>
             <CardContent className="pt-6">
-              <pre className="overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
+              <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
                 <code>{`# 1. 校验评测集：证据行号必须真实存在
 node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
 

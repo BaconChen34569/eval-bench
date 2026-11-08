@@ -131,6 +131,10 @@ if (prelude) {
 }
 
 const isViewport = selector === "viewport";
+// screen 模式：不做 captureBeyondViewport，直接截当前可见区域，
+// 用来确认真机滚动时看到的样子（captureBeyondViewport 会改变视口高度，
+// recharts 的 ResponsiveContainer 会重新测量，偶尔会拍到空白）。
+const isScreen = selector === "screen";
 
 const box = await send("Runtime.evaluate", {
   expression: `(() => {
@@ -153,7 +157,7 @@ let y = 0;
 let boxWidth = 0;
 let boxHeight = 0;
 
-if (isViewport) {
+if (isViewport || isScreen) {
   const view = await send("Runtime.evaluate", {
     expression: `({ x: 0, y: window.scrollY, width: window.innerWidth, height: window.innerHeight })`,
     returnByValue: true,
@@ -168,17 +172,19 @@ if (isViewport) {
   await new Promise((resolve) => setTimeout(resolve, 400));
 }
 
-const shot = await send("Page.captureScreenshot", {
-  format: "png",
-  captureBeyondViewport: true,
-  clip: {
-    x,
-    y,
-    width: boxWidth,
-    height: boxHeight,
-    scale,
-  },
-});
+const shot = isScreen
+  ? await send("Page.captureScreenshot", { format: "png" })
+  : await send("Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: true,
+      clip: {
+        x,
+        y,
+        width: boxWidth,
+        height: boxHeight,
+        scale,
+      },
+    });
 
 await writeFile(outPath, Buffer.from(shot.data, "base64"));
 console.log(`已保存 ${outPath}（${Math.round(boxWidth)}x${Math.round(boxHeight)} @${scale}x）`);

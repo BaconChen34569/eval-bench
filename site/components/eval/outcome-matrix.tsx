@@ -38,8 +38,8 @@ export function OutcomeMatrix() {
   const best = wins.reduce((a, b) => (b.count > a.count ? b : a));
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="overflow-x-auto">
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="table-scroll overflow-x-auto">
         <table className="w-full min-w-[560px] border-separate border-spacing-0.5 text-sm">
           <thead>
             <tr>

@@ -25,13 +25,13 @@ export function CostBreakdownPopover() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className="rounded-md border border-dashed px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-solid hover:text-foreground"
+        className="inline-flex min-h-8 items-center rounded-md border border-dashed px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-solid hover:text-foreground"
         aria-label="成本口径拆解"
       >
         成本怎么算的？
       </PopoverTrigger>
       <PopoverContent className="w-[26rem] p-4" align="start" side="bottom">
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <div>
             <h4 className="text-sm font-semibold">成本口径拆解</h4>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -43,7 +43,7 @@ export function CostBreakdownPopover() {
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="table-scroll overflow-x-auto">
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">

@@ -20,6 +20,45 @@
   scrollbar-gutter: stable;
 }
 
+/* 窄屏里宽表格要左右滑才看得到全部列，右边淡出一点提示「还有列没露出来」。
+   淡出宽度跟着横向滚动进度走：滑到最右端时淡出收掉，最后一列不会被挡住。
+   不支持滚动驱动动画的浏览器直接不淡出，宁可没提示也不能挡住内容。 */
+@property --table-fade {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes table-fade-reveal {
+  from {
+    --table-fade: 18px;
+  }
+  to {
+    --table-fade: 0px;
+  }
+}
+
+@utility table-scroll {
+  @media (max-width: 639px) {
+    @supports (animation-timeline: scroll()) {
+      -webkit-mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - var(--table-fade)),
+        transparent 100%
+      );
+      mask-image: linear-gradient(
+        to right,
+        #000 calc(100% - var(--table-fade)),
+        transparent 100%
+      );
+      animation: table-fade-reveal 1ms ease-in-out;
+      animation-timeline: scroll(self inline);
+      animation-range: 0 100%;
+      animation-fill-mode: both;
+    }
+  }
+}
+
 :root {
   /* 画布用近白灰，卡片留纯白：层次靠底色差而不是靠重描边。 */
   --background: #f8fafc;
@@ -219,4 +258,16 @@ body {
 .eval-table-dense th,
 .eval-table-dense td {
   padding: 10px 14px;
+}
+
+/* 窄屏里横向空间紧张，单元格留白收窄一点，行高和列宽都省下来。 */
+@media (max-width: 639px) {
+  .eval-table th,
+  .eval-table td {
+    padding: 10px 12px;
+  }
+  .eval-table-dense th,
+  .eval-table-dense td {
+    padding: 8px 10px;
+  }
 }

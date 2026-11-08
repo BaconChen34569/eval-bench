@@ -215,7 +215,7 @@ export function ModelComparisonSection() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-        <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+        <div className="min-w-0 rounded-xl border bg-card px-5 py-4 shadow-sm">
           <div className="mb-3">
             <div className="text-base font-semibold">同一份答案，几把尺子各打各的</div>
             <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -258,6 +258,7 @@ export function ModelComparisonSection() {
                   dataKey={`judge${index}`}
                   fill={`var(--color-judge${index})`}
                   radius={[4, 4, 0, 0]}
+                  isAnimationActive={false}
                 >
                   <LabelList
                     dataKey={`judge${index}`}
@@ -273,14 +274,14 @@ export function ModelComparisonSection() {
           </ChartContainer>
         </div>
 
-        <div className="flex flex-col gap-4">
-          <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="min-w-0 rounded-xl border bg-card px-5 py-4 shadow-sm">
             <div className="text-base font-semibold">尺子之间有多一致</div>
             <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
               同一批答案，两把尺子各打一遍。相差不超过 1 分算一致；
               「翻转」指同一份答案，两把尺子对「达没达标」的判断相反。
             </div>
-            <div className="mt-3 overflow-x-auto">
+            <div className="table-scroll mt-3 overflow-x-auto">
               <table className="w-full min-w-[380px] text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
@@ -328,7 +329,7 @@ export function ModelComparisonSection() {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-card px-5 py-4 shadow-sm">
+          <div className="min-w-0 rounded-xl border bg-card px-5 py-4 shadow-sm">
             <div className="text-base font-semibold">尺子偏袒自己那家吗</div>
             <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
               judge 自己也是模型。给它本家的模型打分，和给它别家的模型打分，
@@ -364,7 +365,7 @@ export function ModelComparisonSection() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="table-scroll overflow-x-auto">
         <table className="eval-table w-full min-w-[860px] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
@@ -437,7 +438,7 @@ export function ModelComparisonSection() {
       <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>
 
       {disputes.length > 0 ? (
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-col gap-2">
             <h3 className="text-base font-semibold">
               尺子判出分歧的 {disputes.length} 组判定
@@ -458,7 +459,7 @@ export function ModelComparisonSection() {
               ) : null}
             </p>
           </div>
-          <div className="max-h-[360px] overflow-auto">
+          <div className="table-scroll max-h-[360px] overflow-auto">
             <table className="eval-table w-full min-w-[520px] text-sm">
               <thead>
                 {/* 列表要滚动，表头钉在顶部，读者才知道这一列是哪把尺子。 */}

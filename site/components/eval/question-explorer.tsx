@@ -61,7 +61,7 @@ export function QuestionExplorer() {
               key={item}
               type="button"
               onClick={() => setCategory(item)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              className={`inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors ${
                 category === item
                   ? "border-transparent bg-primary text-primary-foreground"
                   : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -182,7 +182,7 @@ export function QuestionExplorer() {
                                   >
                                     {hit ? "●" : "○"}
                                   </span>
-                                  <span className="min-w-0 break-all">
+                                  <span className="min-w-0 break-words">
                                     {citation.file}:{citation.startLine}-
                                     {citation.endLine}
                                   </span>
@@ -209,7 +209,7 @@ export function QuestionExplorer() {
                     <h4 className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
                       三种策略在这道题上的横向对比
                     </h4>
-                    <div className="overflow-x-auto">
+                    <div className="table-scroll overflow-x-auto">
                       <table className="w-full min-w-[520px] text-xs">
                         <thead>
                           <tr className="border-b text-left text-[11px] text-muted-foreground">
@@ -282,7 +282,7 @@ export function QuestionExplorer() {
                           key={run.runId}
                           type="button"
                           onClick={() => setRunId(run.runId)}
-                          className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          className={`inline-flex min-h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors ${
                             run.runId === runId
                               ? "border-transparent bg-foreground text-background"
                               : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -311,7 +311,7 @@ export function QuestionExplorer() {
                     const answerKey = `${item.questionId}::${run.runId}`;
                     const answerOpen = expandedAnswer === answerKey;
                     return (
-                      <div className="flex flex-col gap-3">
+                      <div className="flex min-w-0 flex-col gap-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge
                             variant={passed ? "default" : "destructive"}
@@ -370,7 +370,7 @@ export function QuestionExplorer() {
                               onClick={() =>
                                 setExpandedAnswer(answerOpen ? null : answerKey)
                               }
-                              className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                              className="inline-flex min-h-8 items-center rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                             >
                               {answerOpen ? "收起回答" : "展开全文"}
                             </button>

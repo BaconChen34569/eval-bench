@@ -7,7 +7,9 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        "flex flex-col gap-6 rounded-lg border bg-card py-6 text-card-foreground shadow-sm",
+        // min-w-0：网格/弹性布局里，卡片默认不允许比内容窄，
+        // 里面的宽表格会把整张卡片顶出视口。
+        "flex min-w-0 flex-col gap-6 rounded-lg border bg-card py-6 text-card-foreground shadow-sm",
         className
       )}
       {...props}
