@@ -88,6 +88,8 @@ export interface RunCase {
   category: QuestionCategory;
   /** 模型给出的原始回答 */
   answer: string;
+  /** 这一轮送进 prompt 的代码块，按检索得分排序 */
+  citations?: Citation[];
   /** judge 写的判语，说明扣分在哪 */
   judgeReason: string;
   judgeScore: number;

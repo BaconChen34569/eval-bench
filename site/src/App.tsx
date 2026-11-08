@@ -18,6 +18,7 @@ import {
   type RunCase,
 } from "@/data/report";
 import { QuestionExplorer } from "@/components/eval/question-explorer";
+import { AgentReplay } from "@/components/eval/agent-replay";
 import { OutcomeMatrix } from "@/components/eval/outcome-matrix";
 import { DataView } from "@/components/eval/data-view";
 import { CostBreakdownPopover } from "@/components/eval/cost-breakdown";
@@ -159,8 +160,18 @@ const CHAPTERS: {
   sections: SectionMeta[];
 }[] = [
   {
-    id: "method",
+    id: "agent",
     numeral: "1",
+    title: "课设 Copilot 实战问答",
+    lead: "先看东西本身：给它一个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。左边挑一道题，右边看它当时到底怎么答的——包括答错的时候。",
+    sections: [
+      { id: "agent", label: "它是怎么工作的", short: "怎么工作" },
+      { id: "ask", label: "实战问答", short: "问答" },
+    ],
+  },
+  {
+    id: "method",
+    numeral: "2",
     title: "评测台怎么测",
     lead: "先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。",
     sections: [
@@ -173,7 +184,7 @@ const CHAPTERS: {
   },
   {
     id: "result",
-    numeral: "2",
+    numeral: "3",
     title: "结论有多硬",
     lead: "把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。",
     sections: [
@@ -190,7 +201,7 @@ const CHAPTERS: {
   },
   {
     id: "evidence",
-    numeral: "3",
+    numeral: "4",
     title: "证据与复现",
     lead: "每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。",
     sections: [
@@ -461,14 +472,14 @@ export default function App() {
               课设 Copilot 评测台
             </h1>
             <p className="max-w-3xl text-base leading-[26px] text-foreground/80">
-              一个能回答「你的代码问答 Agent 到底在哪里失败」的评测台。
+              课设 Copilot 能对着一个真实仓库回答代码问题，答案落在具体行号上。
               我们不只做了一个 Copilot，还给它配了一把尺子：
               在 <span className="font-mono">Flask 3.1.3</span> 上人工标注了{" "}
               {questions.length} 道代码问答题，每道题写清楚了答案必须落在哪几行代码上，
               再用同一套检索器去比较不同切分策略，把失败精确地定位到文件、行号和缺失的要点。
             </p>
-            {/* 首屏不放散装链接，直接给三章目录：读完这一行就知道整页怎么走。 */}
-            <div className="grid w-full gap-3 sm:grid-cols-3">
+            {/* 首屏不放散装链接，直接给四章目录：读完这一行就知道整页怎么走。 */}
+            <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {CHAPTERS.map((chapter) => (
                 <div
                   key={chapter.id}
@@ -531,11 +542,87 @@ export default function App() {
 
         <div className={view === "story" ? "contents" : "hidden"}>
         <ChapterHeader
-          id="chapter-method"
+          id="chapter-agent"
           numeral="1"
+          title="课设 Copilot 实战问答"
+          lead="先看东西本身：给它一个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。下面每一段回答都是真实运行记录，不是演示动画。"
+          first
+        />
+
+        <section id="agent" className="scroll-mt-16 mt-8 flex flex-col gap-6">
+          <SectionTitle id="agent">课设 Copilot 怎么工作</SectionTitle>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            它做的事很朴素：给一个仓库和一个关于代码的问题，它自己找代码、读代码、写出答案，
+            并且把答案落在具体行号上。被测模型是{" "}
+            <span className="font-mono text-foreground">deepseek-flash</span>，
+            跑在 Flask 3.1.3 的源码包上——{fileCount} 个文件、
+            {formatNumber(repoLines)} 行真实代码。
+          </p>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {[
+              {
+                step: "1",
+                title: "切分",
+                detail: "按函数/类边界把仓库切成代码块，而不是按固定字符数硬切。",
+              },
+              {
+                step: "2",
+                title: "检索",
+                detail: "BM25 打底，再按符号名和路径结构重排；中文提问会展开成英文候选词。",
+              },
+              {
+                step: "3",
+                title: "取上下文",
+                detail: `取 top-${ladder[ladder.length - 1]?.retrieval.topK ?? 10} 个代码块拼成上下文，函数级切分下平均约 ${formatNumber(ladder[ladder.length - 1]?.retrievalMetrics.avgContextChars ?? 0)} 字符。`,
+              },
+              {
+                step: "4",
+                title: "作答",
+                detail: "一次大模型调用，提示词要求先列依据再作答，答案必须带文件与行号引用。",
+              },
+              {
+                step: "5",
+                title: "被打分",
+                detail: "评测时才发生：另一把尺子按 1-5 分打分，≥4 分算成功。",
+              },
+            ].map((item) => (
+              <div key={item.step} className="rounded-lg border bg-card p-4 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+                    {item.step}
+                  </span>
+                  <span className="text-sm font-medium">{item.title}</span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  {item.detail}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            前四步是它真正干的活，第五步是评测台干的活。
+            接下来这一小节直接把它的真实作答摊开给你看——包括它答错的那几道。
+          </p>
+        </section>
+
+        <section id="ask" className="scroll-mt-16 mt-12 flex flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <SectionTitle id="ask">实战问答：挑一道题看它怎么答</SectionTitle>
+            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              左边是 {questions.length} 道题，选一道，右边就是完整的一次问答：
+              问题、它拿到的代码块、它写出的答案、judge 的判语。
+              可以在「起步版」和「最终版」之间切换——同一道题，
+              同一个模型、同一把尺子，只是工具本身被改过。
+            </p>
+          </div>
+          <AgentReplay />
+        </section>
+
+        <ChapterHeader
+          id="chapter-method"
+          numeral="2"
           title="评测台怎么测"
           lead="先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。"
-          first
         />
 
         <section id="why" className="scroll-mt-16 mt-8 flex flex-col gap-6">
@@ -958,7 +1045,7 @@ export default function App() {
 
         <ChapterHeader
           id="chapter-result"
-          numeral="2"
+          numeral="3"
           title="结论有多硬"
           lead="把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。"
         />
@@ -1060,7 +1147,7 @@ export default function App() {
 
         <ChapterHeader
           id="chapter-evidence"
-          numeral="3"
+          numeral="4"
           title="证据与复现"
           lead="每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。"
         />
