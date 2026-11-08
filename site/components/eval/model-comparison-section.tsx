@@ -109,7 +109,7 @@ export function ModelComparisonSection() {
     (a, b) => Math.abs(b.gap) - Math.abs(a.gap),
   )[0];
 
-  // 尺子之间判出不同结论的题：同一份答案，有人说达标有人说没达标
+  // 尺子之间判出不同结论的答案：同一份答案，有人说达标有人说没达标
   const disputes = rows.flatMap((row) =>
     row.caseScores
       .filter((item) => {
@@ -121,6 +121,11 @@ export function ModelComparisonSection() {
       })
       .map((item) => ({ row, item })),
   );
+
+  // 分歧落在多少道题上：同一道题可能被多个模型各自判出分歧
+  const disputeQuestions = new Set(
+    disputes.map((entry) => entry.item.questionId),
+  ).size;
 
   const chartData = rows.map((row) => {
     const entry: Record<string, string | number> = {
@@ -174,7 +179,7 @@ export function ModelComparisonSection() {
                   {judgeLabel(worstPair.judgeA)} ↔ {judgeLabel(worstPair.judgeB)}
                   ）只有{" "}
                   {formatPercent(worstPair.agreement)}
-                  ，{worstPair.flips} 题的达标判定被翻转了
+                  ，{worstPair.flips} 份评分的达标判定被翻转了
                 </>
               ) : null}
               。{" "}
@@ -273,7 +278,7 @@ export function ModelComparisonSection() {
             <div className="text-base font-semibold">尺子之间有多一致</div>
             <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
               同一批答案，两把尺子各打一遍。相差不超过 1 分算一致；
-              「翻转」指同一道题，两把尺子对「达没达标」的判断相反。
+              「翻转」指同一份答案，两把尺子对「达没达标」的判断相反。
             </div>
             <div className="mt-3 overflow-x-auto">
               <table className="w-full min-w-[380px] text-sm">
@@ -282,7 +287,9 @@ export function ModelComparisonSection() {
                     <th className="py-2 pr-3 font-medium">两把尺子</th>
                     <th className="py-2 pr-3 text-right font-medium">一致率</th>
                     <th className="py-2 pr-3 text-right font-medium">完全同分</th>
-                    <th className="py-2 pr-3 text-right font-medium">翻转题数</th>
+                    <th className="py-2 pr-3 text-right font-medium">
+                      翻转判定数
+                    </th>
                     <th className="py-2 text-right font-medium">
                       A / B 成功率
                     </th>
@@ -433,11 +440,11 @@ export function ModelComparisonSection() {
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2">
             <h3 className="text-base font-semibold">
-              尺子判出分歧的 {disputes.length} 道题
+              尺子判出分歧的 {disputes.length} 组判定
             </h3>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              同一份答案，有的尺子判达标、有的判没达标。
-              这就是尺子误差具体落在哪几题——{" "}
+              同一份答案，有的尺子判达标、有的判没达标；这些分歧落在{" "}
+              {disputeQuestions} 道题上。这就是尺子误差具体落在哪几题——{" "}
               <span className="font-medium text-foreground">
                 看排名之前得先知道这些题的分数是稳的
               </span>
