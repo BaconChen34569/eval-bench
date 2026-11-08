@@ -256,7 +256,7 @@ cd ../site && npm run dev
 {{这一节需要你补截图，请按下面的顺序截}}
 
 **① 设计工作台**：先把站点的信息结构和视觉方向定下来
-> 截图：`site/shots/01-hero.png`（首页）、`site/shots/02-chunking-compare.png`（切分策略对比）
+> 截图：`site/shots/01-hero.png`（首页）、`site/shots/13-agent-replay.png`（实战问答章节）、`site/shots/02-chunking-compare.png`（切分策略对比）
 
 **② 实现评测流水线**：从数据契约（schema）开始，再逐个模块往上搭
 > 截图：`harness/src/` 下的实现过程（schema → chunk → retrieval → agent → judge → runner）
@@ -295,6 +295,7 @@ cd ../site && npm run dev
 - 复现脚本：`corpus/fetch.sh`
 - 站点截图：`site/shots/`
   - `01-hero.png` 首屏（最高成功率 72.7%、定位错了 50%、judge 一致率 100%）
+  - `13-agent-replay.png` **实战问答（第一章：挑一道题看课设 Copilot 完整的一次问答）**
   - `02-chunking-compare.png` 三种切分策略的检索对比
   - `03-generation.png` 生成层结果
   - `04-before-after.png` **优化前后对照（31.8% → 59.1%）**
@@ -303,7 +304,7 @@ cd ../site && npm run dev
   - `07-failure-attribution.png` 失败归因
   - `08-repro.png` 复现命令
   - `09-dark-hero.png` / `10-dark-ladder.png` 深色模式
-  - `11-mobile.png` 移动端布局
+  - `11-mobile.png` / `14-agent-mobile.png` 移动端布局
   - `12-multi-model.png` **多模型对比（三模型 × 三尺子 + 尺子一致率 + 自评偏袒）**
 
 ---
