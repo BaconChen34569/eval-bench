@@ -308,7 +308,7 @@ cd ../site && npm run dev
 > 截图：`site/shots/01-hero.png`（首页）、`site/shots/13-agent-replay.png`（实战问答章节）、`site/shots/02-chunking-compare.png`（切分策略对比）
 
 **② 实现评测流水线**：从数据契约（schema）开始，再逐个模块往上搭
-> 截图：`harness/src/` 下的实现过程（schema → chunk → retrieval → agent → judge → runner）
+> 截图：Qoder 里这段搭建过程的对话 + `harness/src/` 的代码面板（schema → chunk → retrieval → agent → judge → runner）
 
 **③ 用 Qoder 排错**：这一段写两个真实的坑，都是这次做的时候真踩到并定位到的：
 > - **成本口径算错了两次。** 第一版只统计了 agent 的 token，没算 judge 打分那一次调用；第二版把缓存命中的输入按未命中价计费。两次都是靠把账单口径和 API 返回的 `prompt_cache_hit_tokens` 对上才发现的——后来把成本折算改成独立模块，才算站得住。
@@ -336,7 +336,7 @@ cd ../site && npm run dev
 > 截图：`site/shots/16-judge-agreement.png`（尺子一致率 + 自评偏袒）、`site/shots/15-judge-disputes.png`（尺子分歧逐题表）、`site/shots/12-multi-model.png`（多模型对比全景）
 
 **⑧ 发布上线**：把站点部署成公开可访问的地址
-> 截图：站点地址 + 发布过程（`site/shots/01-hero.png` 是发布后的线上首屏）
+> 截图：`site/shots/01-hero.png`（发布后的线上首屏）+ Qoder Sites 发布面板的过程截图
 
 **⑨ 最终产物**：
 - 在线站点：https://copilot-eval-bench-fzlro45ljfz.qoder.zone
@@ -362,18 +362,20 @@ cd ../site && npm run dev
 
 ### 截图对照表：哪些已经截好，哪些还得你自己截
 
-| 步骤 | 配图 | 状态 |
+> 这个项目从头到尾是在 **Qoder** 里做的（写代码、排错、跑评测、发站点都是），所以过程截图截的就是 **Qoder 的界面**——对话里怎么让我改、怎么定位问题、怎么验证结果，配上代码面板和终端输出。
+
+| 步骤 | 配图（Qoder 界面里截什么） | 状态 |
 |---|---|---|
 | ① 设计工作台 | `site/shots/01-hero.png`、`13-agent-replay.png`、`02-chunking-compare.png` | ✅ 站点截图已就绪 |
-| ② 实现评测流水线 | `harness/src/` 下的实现过程（schema → chunk → retrieval → agent → judge → runner） | ❌ **需要你截 IDE 界面** |
-| ③ 排错（成本口径、失败归因） | IDE 里 `harness/src/llm.ts`（成本折算）和 `harness/src/failure.ts`（失败归因）的代码 + 报错记录 | ❌ **需要你截 IDE 界面** |
-| ④ 瞬时故障重试 | `harness/src/llm.ts` 里的重试逻辑 + 重跑记录 | ❌ **需要你截 IDE 界面** |
-| ⑤ 读失败样本（中文术语桥） | `harness/src/retrieval.ts` 的查询扩展 + `harness/src/bilingual.ts` 术语表 + 逐题失败样本 | ❌ **需要你截 IDE 界面** |
-| ⑥ 优化前后（`--baseline`） | `harness/src/cli.ts` 的 baseline 分支 + 站点 `04-before-after.png` | ❌ **需要你截 IDE 界面** |
+| ② 实现评测流水线 | Qoder 里从数据契约搭到 runner 的那段对话（`harness/src/`：schema → chunk → retrieval → agent → judge → runner），带代码面板 | ❌ **需要你截 Qoder 界面** |
+| ③ 排错（成本口径、失败归因） | Qoder 里定位这两个坑的对话：成本折算（`harness/src/llm.ts`）和失败归因（`harness/src/failure.ts`），带报错/对账记录 | ❌ **需要你截 Qoder 界面** |
+| ④ 瞬时故障重试 | Qoder 里那次"抓网络抖动、加瞬时故障重试、重跑一轮"的对话（`harness/src/llm.ts` 的重试逻辑 + 重跑输出） | ❌ **需要你截 Qoder 界面** |
+| ⑤ 读失败样本（中文术语桥） | Qoder 里逐题看失败样本、最后加中英术语桥的对话（`harness/src/retrieval.ts` + `harness/src/bilingual.ts`） | ❌ **需要你截 Qoder 界面** |
+| ⑥ 优化前后（`--baseline`） | Qoder 里加 `--baseline` 并逐题对照的对话（`harness/src/cli.ts`），配站点 `04-before-after.png` | ❌ **需要你截 Qoder 界面** |
 | ⑦ 尺子会犯错 | `site/shots/16-judge-agreement.png`、`15-judge-disputes.png`、`12-multi-model.png` | ✅ 站点截图已就绪 |
-| ⑧ 发布上线 | `site/shots/01-hero.png`（线上首屏）+ 发布过程截图 | ⚠️ **站点图已就绪，发布过程需你补一张** |
+| ⑧ 发布上线 | `site/shots/01-hero.png`（线上首屏）+ Qoder Sites 发布面板的过程截图 | ⚠️ **站点图已就绪，发布过程需你补一张** |
 
-> 截图安全提醒：`harness/.env` 里存着 API Key，截 IDE 界面时**不要把 `.env` 文件内容截进去**（`.env` 已在 `.gitignore` 里，但截图是另一回事）。
+> 截图安全提醒：`harness/.env` 里存着 API Key，截 Qoder 界面时**不要把 `.env` 的内容拍进去**（`.env` 已在 `.gitignore` 里，但截图是另一回事），终端输出里也一样——别截到带密钥的环境变量。
 
 ---
 
@@ -381,8 +383,8 @@ cd ../site && npm run dev
 
 - [ ] 补齐 `{{姓名}}`、`{{学校}}`（第一节自我介绍）
 - [ ] 补齐第一节最后那句 `{{为什么选 StudyHack 方向 / 你平时的课设场景}}`（可选，但建议写）
-- [ ] 插入 Qoder 过程截图：**②③④⑤⑥ 六步需要你自己截 IDE 界面**（对应文件已在上面的对照表里写清楚），①⑦⑧ 用 `site/shots/` 的现成图
-- [ ] 截 IDE 界面时**不要把 `harness/.env` 拍进去**（密钥只存在这一个文件里）
+- [ ] 插入 Qoder 过程截图：**②③④⑤⑥ 五步需要你自己截 Qoder 界面**（每一步截什么，上面的对照表里写清楚了），①⑦⑧ 用 `site/shots/` 的现成图
+- [ ] 截 Qoder 界面时**不要把 `harness/.env` 和带密钥的环境变量拍进去**（密钥只存在这一个文件里）
 - [ ] 确认站点是**公开可访问**（已确认：https://copilot-eval-bench-fzlro45ljfz.qoder.zone 无需登录）
 - [ ] 确认 GitHub 仓库是公开的（已确认：https://github.com/BaconChen34569/eval-bench 无需登录可读），且站点「怎么复现」一节的按钮指向它
 - [ ] 检查：有没有把 API Key 写进任何截图或代码里
