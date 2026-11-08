@@ -223,6 +223,80 @@ export interface ExperimentReport {
   changes?: string[];
   /** 多模型对比：同一份配置下，几个模型被几把尺子各量一遍 */
   modelComparison?: ModelComparison;
+  /** 多项目对比：同一份配置下，几个不同仓库各跑一轮 */
+  multiProject?: MultiProjectComparison;
+}
+
+/**
+ * 多项目对比中的一行：一个开源项目在同一套配置下的成绩。
+ *
+ * 回答「换个仓库这套评测台还灵不灵」。
+ */
+export interface ProjectComparisonRow {
+  project: string;
+  label: string;
+  repo: string;
+  /** 仓库规模，说明这几个项目并不一样大 */
+  fileCount: number;
+  repoLines: number;
+  questions: number;
+  model: string;
+  judgeModel: string;
+  chunking: ChunkingStrategy;
+  retrieval: {
+    topK: number;
+    rerank: boolean;
+    rerankMode?: "none" | "symbol-boost" | "structure-aware";
+    queryExpansion?: boolean;
+  };
+  promptVersion: "base" | "cite-first";
+  successRate: number;
+  avgJudgeScore: number;
+  avgEvidenceRecall: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  totalCost: number;
+  totalTokens: number;
+  byCategory: Record<string, { total: number; success: number }>;
+  /** 这把尺子在本项目人工参考答案上的一致率 */
+  judgeValidation?: JudgeValidation;
+  /** 检索层指标，这一层不花钱、结果完全可复现 */
+  retrievalMetrics: {
+    recallAt1: number;
+    recallAt3: number;
+    recallAt6: number;
+    /** 按这一轮自己的预算算的召回率 */
+    recallAtBudget: number;
+    mrr: number;
+    avgContextChars: number;
+    chunkCount: number;
+  };
+  /** 逐题得分 */
+  caseScores: {
+    questionId: string;
+    judgeScore: number;
+    evidenceRecall: number;
+  }[];
+}
+
+/**
+ * 多项目对比：几个不同仓库共用同一份配置，各跑一轮。
+ */
+export interface MultiProjectComparison {
+  codeVersion: string;
+  /** 共用配置来自阶梯的哪一轮 */
+  step: string;
+  chunking: ChunkingStrategy;
+  retrieval: {
+    topK: number;
+    rerank: boolean;
+    rerankMode?: "none" | "symbol-boost" | "structure-aware";
+    queryExpansion?: boolean;
+  };
+  promptVersion: "base" | "cite-first";
+  successThreshold: number;
+  rows: ProjectComparisonRow[];
+  note: string;
 }
 
 /** 一个被测模型在某个 judge 手里拿到的成绩。 */
@@ -361,6 +435,9 @@ export const changes = report.changes ?? [];
 
 /** 多模型对比数据，旧报告没带时为 undefined。 */
 export const modelComparison = report.modelComparison;
+
+/** 多项目对比数据，旧报告没带时为 undefined。 */
+export const multiProject = report.multiProject;
 
 /** 某轮阶梯对应的运行记录。 */
 export function ladderRun(stepId: string): EvalRun | undefined {

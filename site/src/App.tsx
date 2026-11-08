@@ -10,6 +10,7 @@ import {
   ladder,
   ladderRuns,
   modelComparison,
+  multiProject,
   questions,
   report,
   runs,
@@ -25,6 +26,7 @@ import { CostBreakdownPopover } from "@/components/eval/cost-breakdown";
 import { ExportButtons } from "@/components/eval/export-buttons";
 import { LadderSection } from "@/components/eval/ladder-section";
 import { ModelComparisonSection } from "@/components/eval/model-comparison-section";
+import { ProjectComparisonSection } from "@/components/eval/project-comparison-section";
 import { BaselineSection } from "@/components/eval/baseline-section";
 import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 import {
@@ -196,6 +198,9 @@ const CHAPTERS: {
         : []),
       ...(modelComparison
         ? [{ id: "models", label: "多模型对比", short: "多模型" }]
+        : []),
+      ...(multiProject
+        ? [{ id: "projects", label: "多项目对比", short: "多项目" }]
         : []),
     ],
   },
@@ -1142,6 +1147,28 @@ export default function App() {
             </div>
 
             <ModelComparisonSection />
+          </section>
+        )}
+
+        {multiProject && (
+          <section id="projects" className="scroll-mt-16 mt-12 flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <SectionTitle id="projects">
+                多项目对比：换个仓库这把尺子还灵不灵
+              </SectionTitle>
+              <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                前面所有数字都来自一个仓库。这就把结论的适用范围限死在了一个项目上——
+                换一套代码风格、换一种目录组织、换一个规模，它还量得出同样的东西吗？
+                这里把被测对象换成四个真实项目：
+                <span className="font-medium text-foreground">
+                  同一份配置、同一把尺子、各自 22 道人工标注的题
+                </span>
+                。四个项目的语言、规模、目录结构都不一样，
+                题也是各自单独标的，所以这份对比量的是尺子本身的迁移能力。
+              </p>
+            </div>
+
+            <ProjectComparisonSection />
           </section>
         )}
 

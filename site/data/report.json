@@ -20518,5 +20518,734 @@
       }
     ],
     "note": "所有被测模型跑同一份配置（函数级切分，top-10，structure-aware，中英术语扩展，提示词 cite-first），主尺子 DeepSeek（deepseek-flash）量所有模型；其余尺子对同一批答案重新打分，答案未改动。"
+  },
+  "multiProject": {
+    "codeVersion": "2026-11-07.r3",
+    "step": "v7",
+    "chunking": {
+      "id": "function-level",
+      "label": "函数级切分",
+      "kind": "function-level",
+      "minFunctionLines": 3
+    },
+    "retrieval": {
+      "topK": 10,
+      "rerank": true,
+      "rerankMode": "structure-aware",
+      "queryExpansion": true
+    },
+    "promptVersion": "cite-first",
+    "successThreshold": 4,
+    "rows": [
+      {
+        "project": "flask",
+        "label": "Flask",
+        "repo": "flask",
+        "fileCount": 27,
+        "repoLines": 9564,
+        "questions": 22,
+        "model": "deepseek-flash",
+        "judgeModel": "deepseek-flash",
+        "chunking": {
+          "id": "function-level",
+          "label": "函数级切分",
+          "kind": "function-level",
+          "minFunctionLines": 3
+        },
+        "retrieval": {
+          "topK": 10,
+          "rerank": true,
+          "rerankMode": "structure-aware",
+          "queryExpansion": true
+        },
+        "promptVersion": "cite-first",
+        "successRate": 0.7272727272727273,
+        "avgJudgeScore": 4,
+        "avgEvidenceRecall": 0.7878787878787878,
+        "avgLatencyMs": 18206.590909090908,
+        "p95LatencyMs": 38629,
+        "totalCost": 0.7163173199999998,
+        "totalTokens": 546319,
+        "byCategory": {
+          "architecture": {
+            "total": 7,
+            "success": 7
+          },
+          "code-location": {
+            "total": 5,
+            "success": 4
+          },
+          "convention": {
+            "total": 4,
+            "success": 1
+          },
+          "debugging": {
+            "total": 6,
+            "success": 4
+          }
+        },
+        "judgeValidation": {
+          "sampled": 20,
+          "agreement": 1,
+          "meanJudgeScore": 5,
+          "meanHumanScore": 4.4,
+          "exactAgreement": 0.4,
+          "note": "judge 给人工参考答案打分，与人工评分相差不超过 1 分视为一致"
+        },
+        "retrievalMetrics": {
+          "recallAt1": 0.32575757575757575,
+          "recallAt3": 0.45454545454545453,
+          "recallAt6": 0.696969696969697,
+          "recallAtBudget": 0.8106060606060606,
+          "mrr": 0.6231601731601732,
+          "avgContextChars": 40948.545454545456,
+          "chunkCount": 557
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q02",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q03",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q04",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q05",
+            "judgeScore": 4,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q06",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q07",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q08",
+            "judgeScore": 2,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q09",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q10",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q11",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q12",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q13",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q14",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q15",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q16",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q17",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q18",
+            "judgeScore": 2,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q19",
+            "judgeScore": 3,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q20",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q21",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q22",
+            "judgeScore": 2,
+            "evidenceRecall": 1
+          }
+        ]
+      },
+      {
+        "project": "requests",
+        "label": "Requests",
+        "repo": "requests",
+        "fileCount": 28,
+        "repoLines": 6722,
+        "questions": 22,
+        "model": "deepseek-flash",
+        "judgeModel": "deepseek-flash",
+        "chunking": {
+          "id": "function-level",
+          "label": "函数级切分",
+          "kind": "function-level",
+          "minFunctionLines": 3
+        },
+        "retrieval": {
+          "topK": 10,
+          "rerank": true,
+          "rerankMode": "structure-aware",
+          "queryExpansion": true
+        },
+        "promptVersion": "cite-first",
+        "successRate": 0.7272727272727273,
+        "avgJudgeScore": 4.045454545454546,
+        "avgEvidenceRecall": 0.7424242424242422,
+        "avgLatencyMs": 19595.5,
+        "p95LatencyMs": 35194,
+        "totalCost": 0.7110583999999999,
+        "totalTokens": 431548,
+        "byCategory": {
+          "architecture": {
+            "total": 7,
+            "success": 6
+          },
+          "code-location": {
+            "total": 5,
+            "success": 4
+          },
+          "convention": {
+            "total": 4,
+            "success": 1
+          },
+          "debugging": {
+            "total": 6,
+            "success": 5
+          }
+        },
+        "judgeValidation": {
+          "sampled": 22,
+          "agreement": 1,
+          "meanJudgeScore": 5,
+          "meanHumanScore": 4.863636363636363,
+          "exactAgreement": 0.8636363636363636,
+          "note": "judge 给人工参考答案打分，与人工评分相差不超过 1 分视为一致"
+        },
+        "retrievalMetrics": {
+          "recallAt1": 0.28787878787878785,
+          "recallAt3": 0.5454545454545454,
+          "recallAt6": 0.6666666666666664,
+          "recallAtBudget": 0.7424242424242422,
+          "mrr": 0.8295454545454546,
+          "avgContextChars": 27067.954545454544,
+          "chunkCount": 424
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q02",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q03",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q04",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q05",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q06",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q07",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q08",
+            "judgeScore": 3,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q09",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q10",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q11",
+            "judgeScore": 3,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q12",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q13",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q14",
+            "judgeScore": 5,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q15",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q16",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q17",
+            "judgeScore": 5,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q18",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q19",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q20",
+            "judgeScore": 5,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q21",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q22",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          }
+        ]
+      },
+      {
+        "project": "werkzeug",
+        "label": "Werkzeug",
+        "repo": "werkzeug",
+        "fileCount": 56,
+        "repoLines": 22407,
+        "questions": 22,
+        "model": "deepseek-flash",
+        "judgeModel": "deepseek-flash",
+        "chunking": {
+          "id": "function-level",
+          "label": "函数级切分",
+          "kind": "function-level",
+          "minFunctionLines": 3
+        },
+        "retrieval": {
+          "topK": 10,
+          "rerank": true,
+          "rerankMode": "structure-aware",
+          "queryExpansion": true
+        },
+        "promptVersion": "cite-first",
+        "successRate": 0.5909090909090909,
+        "avgJudgeScore": 3.8636363636363638,
+        "avgEvidenceRecall": 0.6439393939393939,
+        "avgLatencyMs": 19411.727272727272,
+        "p95LatencyMs": 36254,
+        "totalCost": 0.6712711599999999,
+        "totalTokens": 404873,
+        "byCategory": {
+          "architecture": {
+            "total": 7,
+            "success": 6
+          },
+          "code-location": {
+            "total": 5,
+            "success": 1
+          },
+          "convention": {
+            "total": 4,
+            "success": 3
+          },
+          "debugging": {
+            "total": 6,
+            "success": 3
+          }
+        },
+        "judgeValidation": {
+          "sampled": 22,
+          "agreement": 1,
+          "meanJudgeScore": 5,
+          "meanHumanScore": 5,
+          "exactAgreement": 1,
+          "note": "judge 给人工参考答案打分，与人工评分相差不超过 1 分视为一致"
+        },
+        "retrievalMetrics": {
+          "recallAt1": 0.18181818181818182,
+          "recallAt3": 0.3484848484848485,
+          "recallAt6": 0.5606060606060607,
+          "recallAtBudget": 0.6742424242424242,
+          "mrr": 0.5772727272727273,
+          "avgContextChars": 27797.18181818182,
+          "chunkCount": 1510
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q02",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q03",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q04",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q05",
+            "judgeScore": 3,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q06",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q07",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q08",
+            "judgeScore": 3,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q09",
+            "judgeScore": 5,
+            "evidenceRecall": 0.5
+          },
+          {
+            "questionId": "q10",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q11",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q12",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q13",
+            "judgeScore": 5,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q14",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q15",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q16",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q17",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q18",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q19",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q20",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q21",
+            "judgeScore": 2,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q22",
+            "judgeScore": 1,
+            "evidenceRecall": 0
+          }
+        ]
+      },
+      {
+        "project": "jinja2",
+        "label": "Jinja2",
+        "repo": "jinja2",
+        "fileCount": 28,
+        "repoLines": 14675,
+        "questions": 22,
+        "model": "deepseek-flash",
+        "judgeModel": "deepseek-flash",
+        "chunking": {
+          "id": "function-level",
+          "label": "函数级切分",
+          "kind": "function-level",
+          "minFunctionLines": 3
+        },
+        "retrieval": {
+          "topK": 10,
+          "rerank": true,
+          "rerankMode": "structure-aware",
+          "queryExpansion": true
+        },
+        "promptVersion": "cite-first",
+        "successRate": 0.5,
+        "avgJudgeScore": 3.1363636363636362,
+        "avgEvidenceRecall": 0.4848484848484848,
+        "avgLatencyMs": 20720,
+        "p95LatencyMs": 36132,
+        "totalCost": 0.54323264,
+        "totalTokens": 268822,
+        "byCategory": {
+          "architecture": {
+            "total": 7,
+            "success": 2
+          },
+          "code-location": {
+            "total": 5,
+            "success": 2
+          },
+          "convention": {
+            "total": 4,
+            "success": 3
+          },
+          "debugging": {
+            "total": 6,
+            "success": 4
+          }
+        },
+        "judgeValidation": {
+          "sampled": 22,
+          "agreement": 1,
+          "meanJudgeScore": 5,
+          "meanHumanScore": 5,
+          "exactAgreement": 1,
+          "note": "judge 给人工参考答案打分，与人工评分相差不超过 1 分视为一致"
+        },
+        "retrievalMetrics": {
+          "recallAt1": 0.2424242424242424,
+          "recallAt3": 0.4393939393939394,
+          "recallAt6": 0.5606060606060606,
+          "recallAtBudget": 0.5909090909090908,
+          "mrr": 0.6723484848484849,
+          "avgContextChars": 14215.954545454546,
+          "chunkCount": 1186
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "judgeScore": 2,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q02",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q03",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q04",
+            "judgeScore": 2,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q05",
+            "judgeScore": 1,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q06",
+            "judgeScore": 3,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q07",
+            "judgeScore": 2,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q08",
+            "judgeScore": 1,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q09",
+            "judgeScore": 4,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q10",
+            "judgeScore": 3,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q11",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q12",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q13",
+            "judgeScore": 1,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q14",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q15",
+            "judgeScore": 3,
+            "evidenceRecall": 0.3333333333333333
+          },
+          {
+            "questionId": "q16",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q17",
+            "judgeScore": 4,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q18",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q19",
+            "judgeScore": 5,
+            "evidenceRecall": 1
+          },
+          {
+            "questionId": "q20",
+            "judgeScore": 1,
+            "evidenceRecall": 0
+          },
+          {
+            "questionId": "q21",
+            "judgeScore": 5,
+            "evidenceRecall": 0.6666666666666666
+          },
+          {
+            "questionId": "q22",
+            "judgeScore": 4,
+            "evidenceRecall": 1
+          }
+        ]
+      }
+    ],
+    "note": "四个项目共用同一份配置（函数级切分，top-10，structure-aware，中英术语扩展，提示词 cite-first），被测模型 deepseek-flash，打分模型 deepseek-flash；每份题目都是人工标注参考答案与证据位置。"
   }
 }

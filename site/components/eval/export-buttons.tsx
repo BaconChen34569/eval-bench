@@ -4,6 +4,7 @@ import {
   FAILURE_LABEL,
   ladder,
   modelComparison,
+  multiProject,
   questions,
   report,
   runs,
@@ -266,6 +267,60 @@ export function buildJudgeAgreementCsv(): string {
     .join("\n");
 }
 
+/** 多项目对比：一个仓库一行，四份配置完全相同的横向快照。 */
+export function buildProjectComparisonCsv(): string {
+  if (!multiProject) return "";
+  const header = [
+    "project",
+    "label",
+    "repo",
+    "questions",
+    "fileCount",
+    "repoLines",
+    "successRate",
+    "avgJudgeScore",
+    "avgEvidenceRecall",
+    "recallAt1",
+    "recallAt3",
+    "recallAt6",
+    "recallAtBudget",
+    "mrr",
+    "avgContextChars",
+    "avgLatencyMs",
+    "p95LatencyMs",
+    "totalCost",
+    "totalTokens",
+    "judgeAgreement",
+  ];
+
+  const rows = multiProject.rows.map((row) => [
+    row.project,
+    row.label,
+    row.repo,
+    row.questions,
+    row.fileCount,
+    row.repoLines,
+    row.successRate.toFixed(4),
+    row.avgJudgeScore.toFixed(4),
+    row.avgEvidenceRecall.toFixed(4),
+    row.retrievalMetrics.recallAt1.toFixed(4),
+    row.retrievalMetrics.recallAt3.toFixed(4),
+    row.retrievalMetrics.recallAt6.toFixed(4),
+    row.retrievalMetrics.recallAtBudget.toFixed(4),
+    row.retrievalMetrics.mrr.toFixed(6),
+    Math.round(row.retrievalMetrics.avgContextChars),
+    Math.round(row.avgLatencyMs),
+    row.p95LatencyMs,
+    row.totalCost.toFixed(8),
+    row.totalTokens,
+    row.judgeValidation ? row.judgeValidation.agreement.toFixed(4) : "",
+  ]);
+
+  return [header, ...rows]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+}
+
 export function ExportButtons() {
   return (
     <div className="flex flex-wrap gap-2">
@@ -335,6 +390,21 @@ export function ExportButtons() {
             下载尺子一致率 CSV
           </Button>
         </>
+      )}
+      {multiProject && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            download(
+              "eval-bench-projects.csv",
+              "text/csv;charset=utf-8",
+              buildProjectComparisonCsv(),
+            )
+          }
+        >
+          下载多项目对比 CSV
+        </Button>
       )}
       <Button
         variant="outline"
