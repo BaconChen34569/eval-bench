@@ -313,36 +313,36 @@
     },
     {
       "id": "q10",
-      "question": "把 `ProxyFix` 放在应用前面后，为什么客户端仍然能伪造 `REMOTE_ADDR` 或 `Host`？源码里是用什么机制限制可信范围的？",
+      "question": "werkzeug 的 `Request.trusted_hosts` 是干什么的？默认值是什么、不配置会怎样？`Host` 头在读取时是怎么被校验的，不信任时抛什么异常？",
       "category": "debugging",
       "difficulty": "medium",
       "reference": {
-        "answer": "关键在 `ProxyFix._get_real_value`：它按可信代理数从列表右侧取值，`values = parse_list_header(value)`，只有 `len(values) >= trusted` 才取 `values[-trusted]`，否则不动 environ。所以每个头要单独配置信任数：`x_for`、`x_proto` 默认 1，而 `x_host`、`x_port`、`x_prefix` 默认 0（默认不信任）；信任数配得比实际代理链长，伪造值就会被当成真实 IP。",
+        "answer": "`trusted_hosts` 定义在 `src/werkzeug/sansio/request.py` 的 `Request` 类上，类型是 `list[str] | None`，默认值就是 `None`。它的 docstring 写明：默认信任所有 host，也就是客户端说 host 是什么都接受；因为 `Host` 和 `X-Forwarded-Host` 头可以被恶意客户端随意设置，所以推荐要么设置这个属性，要么在代理层做类似校验。`Host` 的校验走 `src/werkzeug/sansio/utils.py`：`Request.host` 这个 cached_property 调 `get_host(scheme, headers.get(\"host\"), server, trusted_hosts)`；`get_host` 优先用客户端的 `Host` 头，没有才退回服务器配置的地址（Unix socket 的 `server[1] is None` 时忽略），并按 scheme 去掉标准的 80/443 端口，最后调用 `host_is_trusted(host, trusted_hosts)`。`host_is_trusted` 先用 `_host_re` 正则校验 host 字符是否合法并拆出端口，端口要在 1–65535 之间；如果 `trusted_list` 为空就全部放行，否则逐个比对：条目以点开头表示按后缀匹配（接受所有子域），比对前会用 IDNA 编码并去掉端口。校验不通过时的行为分两种：如果配了 `trusted_hosts`，`get_host` 会抛 `SecurityError(f\"Host {host!r} is not trusted.\")`；如果没配（`trusted_hosts` 为空），则认为只是字符非法，直接返回空字符串，宿主名路由和外部 URL 构造会因此失效。",
         "evidence": [
           {
-            "file": "src/werkzeug/middleware/proxy_fix.py",
-            "startLine": 105,
-            "endLine": 124,
-            "symbol": "_get_real_value"
-          },
-          {
-            "file": "src/werkzeug/middleware/proxy_fix.py",
-            "startLine": 89,
-            "endLine": 103,
-            "symbol": "x_for"
-          },
-          {
             "file": "src/werkzeug/sansio/request.py",
-            "startLine": 229,
-            "endLine": 238,
+            "startLine": 104,
+            "endLine": 114,
             "symbol": "trusted_hosts"
+          },
+          {
+            "file": "src/werkzeug/sansio/utils.py",
+            "startLine": 25,
+            "endLine": 79,
+            "symbol": "host_is_trusted"
+          },
+          {
+            "file": "src/werkzeug/sansio/utils.py",
+            "startLine": 131,
+            "endLine": 159,
+            "symbol": "get_host"
           }
         ],
         "mustMention": [
-          "可信值取 values[-trusted]",
-          "长度不足 trusted 则不改 environ",
-          "x_host 等默认 0 不信任",
-          "信任数配错会伪造 IP"
+          "trusted_hosts 默认是 None，即默认信任所有 host",
+          "host_is_trusted 用正则校验字符并做后缀匹配",
+          "配了 trusted_hosts 且不匹配时抛 SecurityError",
+          "没配 trusted_hosts 时非法 host 返回空字符串"
         ]
       },
       "humanScore": 5
@@ -415,6 +415,365 @@
           "get_data 缓存到 _cached_data",
           "_get_stream_for_parsing 重建流",
           "request.data 在表单请求为空"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q13",
+      "question": "werkzeug 里抛出的 `HTTPException` 是怎么变成一个真正的 HTTP 响应的？`get_response`、`get_headers`、`__call__` 分别做了什么，路由里的 `RequestRedirect` 又是怎么变成 308 响应的？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "所有 HTTP 异常都继承 `HTTPException`（src/werkzeug/exceptions.py）。get_response 用 get_headers 和 get_body 组装 Response：先看有没有预设的 `response`，没有就取 get_headers（默认只有 `Content-Type: text/html; charset=utf-8`）和 get_body（由 `code`、`name`、`description` 拼成的 HTML），再构造 `Response(body, self.code, headers)`。异常本身可以直接当 WSGI 应用被调用，`__call__` 内部就是 `get_response(environ)` 之后再交给服务器；`get_description` 用 `markupsafe.escape` 转义并把换行换成 `<br>`。路由层的 `RequestRedirect` 继承 `HTTPException`，RequestRedirect 的 code 是 308，它的 get_response 不渲染 HTML 错误页，而是调用 `werkzeug.utils.redirect(self.new_url, self.code)`，由 redirect 负责设置 Location 头，同时把跳转地址写进 HTML 提示里。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/exceptions.py",
+            "startLine": 144,
+            "endLine": 179,
+            "symbol": "get_response"
+          },
+          {
+            "file": "src/werkzeug/routing/exceptions.py",
+            "startLine": 28,
+            "endLine": 46,
+            "symbol": "RequestRedirect"
+          },
+          {
+            "file": "src/werkzeug/utils.py",
+            "startLine": 235,
+            "endLine": 272,
+            "symbol": "redirect"
+          }
+        ],
+        "mustMention": [
+          "get_response 用 get_headers 和 get_body 组装 Response",
+          "异常本身可以直接当 WSGI 应用被调用",
+          "RequestRedirect 的 code 是 308",
+          "redirect 负责设置 Location 头"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q14",
+      "question": "一条 `Rule` 是怎么被编译成能匹配 URL 的正则片段的？converter 上的 `regex`、`part_isolating`、`weight` 分别起什么作用，为什么 `path` 这种 converter 只能放在规则的最后？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "规则先由 `Map.add` 调 `rule.bind(map)`，bind 里再调 `compile()`，compile 调 `_parse_rule` 把规则字符串按 `/` 切成若干 `RulePart`。`_parse_rule` 用 `_part_re` 认出 `<converter(args):name>` 这一段，通过 `get_converter` 拿到 converter 实例，把 `convobj.regex` 包成命名分组 `(?P<__werkzeug_N>...)` 拼进正则，并把变量名记进 `self._converters` 和 `self.arguments`。converter 的三个属性各管一件事：`_parse_rule` 用 converter 的 regex 拼出命名正则分组；`part_isolating` 决定它能不能跨 `/`，为 False 时（典型是 PathConverter，它把 part_isolating 设成 False）该段会被标成 final，规则编译到 `RulePart.final` 为真时就不再切分、后面的 `/` 直接并进正则，所以 part_isolating 为 False 的 converter 只能放在最后；`weight`（BaseConverter 默认 100）会累加进 `RulePart.weight` 的 argument_weights，weight 决定动态段的匹配优先级。BaseConverter 默认 regex、weight、part_isolating 分别是 `[^/]+`、100、True，并且 `__init_subclass__` 里规定：子类只要自己定义了含 `/` 的 regex 又没显式写 part_isolating，就自动把 part_isolating 关掉。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/routing/rules.py",
+            "startLine": 605,
+            "endLine": 635,
+            "symbol": "_parse_rule"
+          },
+          {
+            "file": "src/werkzeug/routing/rules.py",
+            "startLine": 643,
+            "endLine": 696,
+            "symbol": "RulePart"
+          },
+          {
+            "file": "src/werkzeug/routing/converters.py",
+            "startLine": 18,
+            "endLine": 45,
+            "symbol": "BaseConverter"
+          }
+        ],
+        "mustMention": [
+          "_parse_rule 用 converter 的 regex 拼出命名正则分组",
+          "part_isolating 为 False 的 converter 只能放在最后",
+          "weight 决定动态段的匹配优先级",
+          "BaseConverter 默认 regex、weight、part_isolating"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q15",
+      "question": "werkzeug 的开发服务器 `run_simple` 是怎么把静态文件目录挂上去的？`SharedDataMiddleware` 收到请求后怎么定位文件，又是怎么用 `ETag` 和 `Last-Modified` 判定 304 的？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "run_simple 用 SharedDataMiddleware 包住应用来提供静态文件：`static_files` 非空时先 `from .middleware.shared_data import SharedDataMiddleware`，再 `SharedDataMiddleware(application, static_files)`（之后才叠 `DebuggedApplication`），静态文件因此在请求链最前面被处理。`SharedDataMiddleware.__call__` 用 `get_path_info(environ)` 取路径，遍历 `exports` 里的挂载点：路径正好等于挂载点就取目录本身，否则取以挂载点开头的剩余部分交给 loader；loader 内部用 `safe_join` 拼路径，非法路径直接放弃。命中后它猜 mimetype、算 `ETag`（文件名与 mtime、大小做校验和再 `quote_etag`）和 `Last-Modified`，带上 `Cache-Control` 与 `Expires`；随后用 is_resource_modified 判断是否返回 304，未修改就回 `304 Not Modified` 且不发响应体，否则回 `200 OK` 和文件内容。没命中文件时它把请求原样交给内层应用。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/serving.py",
+            "startLine": 1076,
+            "endLine": 1091,
+            "symbol": "SharedDataMiddleware"
+          },
+          {
+            "file": "src/werkzeug/middleware/shared_data.py",
+            "startLine": 228,
+            "endLine": 284,
+            "symbol": "SharedDataMiddleware.__call__"
+          },
+          {
+            "file": "src/werkzeug/http.py",
+            "startLine": 1183,
+            "endLine": 1218,
+            "symbol": "is_resource_modified"
+          }
+        ],
+        "mustMention": [
+          "run_simple 用 SharedDataMiddleware 包住应用来提供静态文件",
+          "loader 内部用 safe_join 拼路径",
+          "用 is_resource_modified 判断是否返回 304",
+          "未命中文件时把请求交给内层应用"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q16",
+      "question": "werkzeug 里处理 `Accept` 头内容协商的代码分别在哪些文件？`Accept`、`MIMEAccept` 这两个数据结构定义在哪，`parse_accept_header` 又在哪，`best_match` 是怎么挑出最优匹配的？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "Accept 和 MIMEAccept 定义在 datastructures/accept.py：`Accept` 继承 `ImmutableList`，内部是 `(value, quality)` 元组列表，构造时按 (specificity, quality) 降序排序，`_value_matches` 负责大小写不敏感和通配 `*` 的匹配；`MIMEAccept` 继承 `Accept`，把 specificity 扩展成按 `/` 和参数逐段比较，`_value_matches` 里处理 `*/*`、`type/*` 以及参数必须完全相同。parse_accept_header 在 http.py：它先用 `parse_list_header` 拆逗号列表，再对每一项用 `parse_options_header` 拆参数，把 `q` 单独取出来，非法 q 值的项会被丢弃（q 不在 0 到 1 之间或格式不对都跳过），剩下的参数用 `dump_options_header` 拼回 media type，最后构造 `Accept` 对象。挑选结果靠 `Accept.best_match`：对每个候选用 `_best_single_match` 找到第一条能匹配且 quality 大于 0 的客户端条目，再比较 quality 和 specificity，quality 更高或同 quality 但更具体的胜出；`LanguageAccept` 还会退回用 primary language 匹配，`CharsetAccept` 用 `codecs.lookup` 归一化字符集名字。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/datastructures/accept.py",
+            "startLine": 11,
+            "endLine": 65,
+            "symbol": "Accept"
+          },
+          {
+            "file": "src/werkzeug/datastructures/accept.py",
+            "startLine": 164,
+            "endLine": 198,
+            "symbol": "best_match"
+          },
+          {
+            "file": "src/werkzeug/http.py",
+            "startLine": 646,
+            "endLine": 696,
+            "symbol": "parse_accept_header"
+          }
+        ],
+        "mustMention": [
+          "Accept 和 MIMEAccept 定义在 datastructures/accept.py",
+          "parse_accept_header 在 http.py",
+          "非法 q 值的项会被丢弃",
+          "best_match 比较 quality 和 specificity"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q17",
+      "question": "werkzeug 自带的 WSGI 协议检查中间件 `LintMiddleware` 实现在哪个文件？它检查 `ETag`、`Location` 头和 304 响应体的代码分别在哪，`FileWrapper` 又定义在哪里？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "LintMiddleware 在 middleware/lint.py。它把应用的 `wsgi.input` 换成自己的 `InputStream`（提醒不要不带 size 调 `read()`），把 `wsgi.errors` 换成 `ErrorStream`，并把 `environ` 里的 `wsgi.file_wrapper` 强制设成 werkzeug 自己的 FileWrapper，FileWrapper 定义在 wsgi.py，这样它能统计实际发出去的字节数。响应头检查在 `check_headers`：etag 必须带引号，`W/` 前缀必须是大写，`Location` 必须是绝对 URL，否则发警告。响应体检查在 `GuardedIterator.close`：状态码 304 时不允许出现实体头和响应体，1xx/204 时 Content-Length 必须为 0 且不能有 body，其它情况下 Content-Length 必须和实际发出的字节数一致。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/middleware/lint.py",
+            "startLine": 349,
+            "endLine": 374,
+            "symbol": "check_headers"
+          },
+          {
+            "file": "src/werkzeug/middleware/lint.py",
+            "startLine": 166,
+            "endLine": 213,
+            "symbol": "GuardedIterator.close"
+          },
+          {
+            "file": "src/werkzeug/wsgi.py",
+            "startLine": 302,
+            "endLine": 320,
+            "symbol": "FileWrapper"
+          }
+        ],
+        "mustMention": [
+          "LintMiddleware 在 middleware/lint.py",
+          "FileWrapper 定义在 wsgi.py",
+          "etag 必须带引号且 W/ 前缀要大写",
+          "304 响应不允许有响应体"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q18",
+      "question": "werkzeug 对 `ETag` 的强标记和弱标记是怎么约定的？`quote_etag`、`unquote_etag`、`parse_etags` 分别产出什么格式，`ETags.to_header` 输出的头值长什么样？",
+      "category": "convention",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "约定是：强 etag 写成双引号包裹，弱 etag 加 W/ 前缀，即强标记 `\"abc\"`、弱标记 `W/\"abc\"`。`quote_etag(etag, weak=False)` 给值加双引号，`weak=True` 时再加 `W/` 前缀，值里本身带引号直接抛 `ValueError`；`unquote_etag` 反向解析，unquote_etag 返回 (etag, weak) 二元组，遇到 `W/`（大小写都认）算弱标记，没有引号时按非法未加引号原样返回。`parse_etags` 用 `_etag_re` 扫描整个头值，parse_etags 把标签分成 strong 和 weak 两组，`*` 单独处理成 `star_tag`，跳不过去的字符会一直跳到下一个逗号。`datastructures/etag.py` 里的 `ETags` 持有这两组标签：`contains` 只认强标签，`contains_weak` 强弱都认，`contains_raw` 接受带引号的原始头值并按强弱选择比较方式；to_header 把强标签输出成双引号、弱标签输出成 W/ 前缀并用逗号连接，`star_tag` 时输出 `*`。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/http.py",
+            "startLine": 970,
+            "endLine": 982,
+            "symbol": "quote_etag"
+          },
+          {
+            "file": "src/werkzeug/http.py",
+            "startLine": 989,
+            "endLine": 1016,
+            "symbol": "unquote_etag"
+          },
+          {
+            "file": "src/werkzeug/datastructures/etag.py",
+            "startLine": 41,
+            "endLine": 70,
+            "symbol": "ETags.to_header"
+          }
+        ],
+        "mustMention": [
+          "强 etag 写成双引号包裹，弱 etag 加 W/ 前缀",
+          "unquote_etag 返回 (etag, weak) 二元组",
+          "parse_etags 把标签分成 strong 和 weak 两组",
+          "to_header 把强标签输出成双引号、弱标签输出成 W/ 前缀"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q19",
+      "question": "werkzeug 约定用 `Local`/`LocalStack` 保存请求上下文的数据，这些数据是什么时候被释放的？`LocalManager` 里的 `cleanup`、`make_middleware` 和 `ClosingIterator` 是怎么配合的？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`LocalManager` 在 `src/werkzeug/local.py`，它持有一组 `Local`/`LocalStack`。cleanup 调用 release_local 清空 ContextVar：cleanup 逐个调用 `release_local`，而 `release_local` 调对象的 `__release_local__`，把 `ContextVar` 里的 dict/list 重新置空。make_middleware 用 ClosingIterator 包住应用：它返回 `ClosingIterator(app(environ, start_response), self.cleanup)`，而 ClosingIterator 在 `src/werkzeug/wsgi.py`，它保存应用 iterable 自带的 `close` 和额外回调列表，ClosingIterator.close 依次执行回调，于是 WSGI 服务器在关闭响应 iterable 时顺带把上下文数据清掉；`middleware` 方法是 `make_middleware` 的装饰器版本。因为 `cleanup` 只清当前 context 的数据，异步或线程复用场景下必须在同一个 context 里释放。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/local.py",
+            "startLine": 23,
+            "endLine": 32,
+            "symbol": "release_local"
+          },
+          {
+            "file": "src/werkzeug/local.py",
+            "startLine": 186,
+            "endLine": 249,
+            "symbol": "LocalManager"
+          },
+          {
+            "file": "src/werkzeug/wsgi.py",
+            "startLine": 227,
+            "endLine": 276,
+            "symbol": "ClosingIterator"
+          }
+        ],
+        "mustMention": [
+          "cleanup 调用 release_local 清空 ContextVar",
+          "make_middleware 用 ClosingIterator 包住应用",
+          "ClosingIterator.close 依次执行回调"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q20",
+      "question": "为什么 werkzeug 的静态文件接口遇到路径穿越时返回的是 404 而不是 403？`safe_join` 到底拒绝了哪些输入，`send_from_directory` 和 `SharedDataMiddleware` 拿到非法路径后分别怎么处理？",
+      "category": "debugging",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "`safe_join` 在 `src/werkzeug/security.py`，它把不可信的路径段先做 `posixpath.normpath`，然后拒绝这些情况：绝对路径（`os.path.isabs` 或以 `/` 开头）、`..` 或以 `../` 开头、含 Windows 反斜杠等替代分隔符，以及在 Windows 上路径段命中 `CON`、`NUL`、`PRN` 等设备名；命中就返回 `None`，否则用 `posixpath.join` 拼到可信目录后面。`send_from_directory`（`src/werkzeug/utils.py`）拿 `safe_join` 的结果，拿到 `None` 就 `raise NotFound()`，拼出来的路径不是普通文件也 `raise NotFound()`。`SharedDataMiddleware` 的 `get_directory_loader` 用同一套 `safe_join`，返回 `None` 时 loader 返回 `(None, None)`，中间件认为没找到文件。返回 404 而不是 403 是为了不暴露文件是否存在。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/security.py",
+            "startLine": 149,
+            "endLine": 223,
+            "symbol": "safe_join"
+          },
+          {
+            "file": "src/werkzeug/utils.py",
+            "startLine": 531,
+            "endLine": 570,
+            "symbol": "send_from_directory"
+          },
+          {
+            "file": "src/werkzeug/middleware/shared_data.py",
+            "startLine": 203,
+            "endLine": 220,
+            "symbol": "get_directory_loader"
+          }
+        ],
+        "mustMention": [
+          "safe_join 拒绝绝对路径、.. 和 Windows 设备名",
+          "send_from_directory 在路径非法时抛 NotFound",
+          "SharedDataMiddleware 找不到文件时把请求交给内层应用",
+          "返回 404 而不是 403 是为了不暴露文件是否存在"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q21",
+      "question": "上传表单时如果字段太大或者 part 太多，werkzeug 是怎么拦下来返回 413 的？`max_form_memory_size`、`max_form_parts` 分别在哪一层检查，文件又是怎么被组装成 `FileStorage` 的？",
+      "category": "debugging",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "限制分两层。`MultiPartParser.parse` 在 `src/werkzeug/formparser.py` 里构造 `MultipartDecoder` 时把 `max_form_memory_size` 和 `max_form_parts` 传下去，字段数据按事件累加大小，超过 `max_form_memory_size` 就抛 `RequestEntityTooLarge`（也就是 413）。更底层一层，MultipartDecoder.receive_data 在缓冲区超限时抛 RequestEntityTooLarge：它在把新数据放进缓冲区前就检查 `len(self.buffer) + len(data) > max_form_memory_size`，超了直接抛异常，防止单个事件把内存吃满；max_form_parts 也在 decoder 里统计并超限抛 413。另外总长度限制 `max_content_length` 由 `wsgi.get_input_stream` 在读流之前检查。组装文件方面，decoder 遇到带 `filename` 的 part 会产生 `File` 事件，`MultiPartParser` 为它建一个流容器（`stream_factory`），数据写完后 `seek(0)`，连同 `filename`、`name`、`headers` 一起构造 `FileStorage`（`src/werkzeug/datastructures/file_storage.py`），最后放进 `Request.files` 这个 MultiDict。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/formparser.py",
+            "startLine": 360,
+            "endLine": 376,
+            "symbol": "MultiPartParser.parse"
+          },
+          {
+            "file": "src/werkzeug/sansio/multipart.py",
+            "startLine": 127,
+            "endLine": 139,
+            "symbol": "receive_data"
+          },
+          {
+            "file": "src/werkzeug/datastructures/file_storage.py",
+            "startLine": 16,
+            "endLine": 58,
+            "symbol": "FileStorage"
+          }
+        ],
+        "mustMention": [
+          "MultipartDecoder.receive_data 在缓冲区超限时抛 RequestEntityTooLarge",
+          "max_form_parts 也在 decoder 里统计并超限抛 413",
+          "max_content_length 由 get_input_stream 在读流之前检查",
+          "文件数据写完后构造 FileStorage 放进 Request.files"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q22",
+      "question": "重定向的 URL 是怎么拼出来、又是怎么发给客户端的？`MapAdapter.make_redirect_url` 怎么组装 scheme/host/path，`Response` 的 `Location` 头为什么会被 percent-encoding？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`MapAdapter.make_redirect_url`（`src/werkzeug/routing/map.py`）拿 `self.url_scheme`、`self.get_host(domain_part)` 和 `self.script_name` 组装，路径部分用 `\"/\".join((self.script_name.strip(\"/\"), path_info.lstrip(\"/\")))`，查询串经 `encode_query_args` 变成 query string，最后 make_redirect_url 用 urlunsplit 拼出完整 URL。响应真正发出前，`Response.get_wsgi_headers`（`src/werkzeug/wrappers/response.py`）会对 `Location` 和 `Content-Location` 调 `iri_to_uri`，所以中文这种非 ASCII 字符会被转成 percent-encoding；`iri_to_uri`（`src/werkzeug/urls.py`）按 URL 的不同部分用不同的 safe 集合：iri_to_uri 对 path、query、fragment 用不同的 safe 集合，path 保留 `%!$&'()*+,/:;=@`，query 额外保留 `=?@`，fragment 保留 `!#$&'()*+,/:;=?@`，hostname 则用 IDNA 编成 punycode。反方向是 `uri_to_iri`，它只解开合法的 UTF-8 字符、保留保留字符和非法字节的百分号形式，并把 hostname 从 punycode 解回来。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/routing/map.py",
+            "startLine": 747,
+            "endLine": 768,
+            "symbol": "make_redirect_url"
+          },
+          {
+            "file": "src/werkzeug/wrappers/response.py",
+            "startLine": 480,
+            "endLine": 493,
+            "symbol": "iri_to_uri"
+          },
+          {
+            "file": "src/werkzeug/urls.py",
+            "startLine": 116,
+            "endLine": 149,
+            "symbol": "iri_to_uri"
+          }
+        ],
+        "mustMention": [
+          "make_redirect_url 用 urlunsplit 拼出完整 URL",
+          "get_wsgi_headers 会用 iri_to_uri 处理 Location 头",
+          "iri_to_uri 对 path、query、fragment 用不同的 safe 集合",
+          "hostname 用 IDNA 编成 punycode"
         ]
       },
       "humanScore": 5

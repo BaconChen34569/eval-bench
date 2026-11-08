@@ -8,6 +8,7 @@ import { discoverProfiles, resolveProfile, type ReadyProfile } from "./profiles.
 import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
 import { readBaseline } from "./baseline.ts";
+import { buildMultiProjectComparison, type ProjectManifest } from "./projects.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
 import type {
   BaselineSnapshot,
@@ -28,6 +29,8 @@ import type {
  *   node --experimental-strip-types src/cli.ts run       <dataset> <repoRoot> <strategyId> [--out run.json]
  *   node --experimental-strip-types src/cli.ts ladder    <dataset.json> <repoRoot> [--out report.json] [--reuse report.json]
   node --experimental-strip-types src/cli.ts report    <run.json...> [--out report.json]
+  node --experimental-strip-types src/cli.ts projects <manifest.json> [--out multi-project.json] [--report 报告.json] [--step v7]
+  node --experimental-strip-types src/cli.ts judge-check <dataset.json> [--out judge-validation.json] [--judge-model 档案]
  *   node --experimental-strip-types src/cli.ts models
 
  * 换模型跑：--model qwen；换打分模型：--judge-model glm。
@@ -88,7 +91,12 @@ function usage(): never {
 --model 指定被测模型，--judge-model 指定打分模型，不给就用 .env 里的默认档案。
 
 compare 命令跑多模型对比：所有被测模型用同一份配置，每把尺子都量一遍。
---agents / --judges 用逗号分隔档案 id，--judges 的第一个是主尺子。`,
+--agents / --judges 用逗号分隔档案 id，--judges 的第一个是主尺子。
+
+projects 命令做多项目对比：不同仓库用同一份配置各跑一轮，横向比。
+manifest 里列出每个项目的评测集、仓库目录和运行记录路径。
+
+judge-check 命令做 judge 自检：让 judge 给人工写的参考答案打分，和人工评分比较。`,
   );
   process.exit(1);
 }
@@ -621,6 +629,92 @@ async function main(): Promise<void> {
       const target = reportOutPath ?? reportPath!;
       await writeJson(target, baseReport);
       console.log(`报告已写入 ${target}`);
+    }
+    return;
+  }
+
+  if (command === "judge-check") {
+    const [datasetPath] = args;
+    if (!datasetPath) usage();
+
+    const outputPath =
+      flagValue(args, "--out") ??
+      join(process.cwd(), "out", "judge-validation.json");
+    const dataset = await readDataset(datasetPath);
+    const { judge } = selectModels(process.env, args);
+
+    console.log(
+      `judge 自检：${dataset.questions.length} 题的人工参考答案（打分模型 ${judge.config.model}）`,
+    );
+    const validation = await validateJudge(dataset, judge.config, {
+      onProgress: (done, total) =>
+        console.log(`  (${done}/${total}) judge 自检`),
+    });
+
+    console.log(
+      `  一致率 ${(validation.summary.agreement * 100).toFixed(1)}%` +
+        `（${validation.summary.sampled} 题）` +
+        `  judge 均分 ${validation.summary.meanJudgeScore.toFixed(2)}` +
+        ` vs 人工均分 ${validation.summary.meanHumanScore.toFixed(2)}`,
+    );
+
+    await writeJson(outputPath, {
+      datasetId: dataset.id,
+      judgeModel: judge.config.model,
+      summary: validation.summary,
+      details: validation.details,
+    });
+    console.log(`\n自检结果已写入 ${outputPath}`);
+    return;
+  }
+
+  if (command === "projects") {
+    const [manifestPath] = args;
+    if (!manifestPath) usage();
+
+    const outputPath =
+      flagValue(args, "--out") ??
+      join(process.cwd(), "out", "multi-project.json");
+    const reportPath = flagValue(args, "--report");
+    const stepId = flagValue(args, "--step") ?? "v7";
+
+    const manifest = JSON.parse(
+      await readFile(manifestPath, "utf8"),
+    ) as ProjectManifest;
+
+    const comparison = await buildMultiProjectComparison({
+      manifest,
+      step: stepId,
+      successThreshold: 4,
+      onProgress: (message) => console.log(`  ${message}`),
+    });
+
+    console.log("\n=== 多项目对比 ===");
+    console.log(
+      `共用配置：${comparison.chunking.label}，top-${comparison.retrieval.topK}，` +
+        `${comparison.retrieval.rerankMode ?? "none"}，提示词 ${comparison.promptVersion}`,
+    );
+    for (const row of comparison.rows) {
+      console.log(
+        `  ${row.label.padEnd(10)} 成功率 ${(row.successRate * 100).toFixed(1)}%` +
+          `  均分 ${row.avgJudgeScore.toFixed(2)}` +
+          `  recall@1 ${(row.retrievalMetrics.recallAt1 * 100).toFixed(1)}%` +
+          `  MRR ${row.retrievalMetrics.mrr.toFixed(3)}` +
+          `  ${row.questions} 题 / ${row.fileCount} 文件` +
+          `  成本 ¥${row.totalCost.toFixed(4)}`,
+      );
+    }
+
+    await writeJson(outputPath, comparison);
+    console.log(`\n对比结果已写入 ${outputPath}`);
+
+    if (reportPath) {
+      const report = JSON.parse(
+        await readFile(reportPath, "utf8"),
+      ) as ExperimentReport;
+      report.multiProject = comparison;
+      await writeJson(reportPath, report);
+      console.log(`报告已写入 ${reportPath}`);
     }
     return;
   }

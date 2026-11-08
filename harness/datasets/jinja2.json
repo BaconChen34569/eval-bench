@@ -256,6 +256,226 @@
         ]
       },
       "humanScore": 5
+    },
+    {
+      "id": "q13",
+      "question": "Jinja 的词法分析（lexer）是怎么把模板源码切成 token 的？`Lexer.tokeniter` 里的状态机怎么在 root、variable_begin、block_begin、raw_begin 之间切换？`{%- -%}`、`{{- -}}` 这种空白控制（trim_blocks / lstrip_blocks）在哪一步生效，括号不配对（balancing_stack）时又会发生什么？扩展的 `preprocess` 和 `filter_stream` 是在词法分析的哪一环插进来的（`Environment._tokenize`）？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Lexer` 用一张以状态名为键的正则规则表来切词：`Lexer.__init__` 把 root、comment_begin、block_begin、variable_begin、raw_begin、line_statement_begin、line_comment_begin 各自的 `_Rule` 准备好，`tokeniter` 则维护一个状态栈 `stack`，默认从 \"root\" 开始，每匹配一条规则就按 `#pop`、`#bygroup` 或直接状态名切换到下一批规则，从而实现模板文本、语句块、变量、raw 块的层层进入与退出。空白控制也在这一层完成：`-`/`+` 标记由 `OptionalLStrip` 规则捕获，命中 `-` 时对标签前的文本做 `rstrip` 并累计 `newlines_stripped`，没有标记 `+` 且环境开了 `lstrip_blocks` 时还会去掉标签前一行行首的空白，而 `trim_blocks` 是靠把块结束规则写成“结束符后跟一个可选换行”来实现的。括号配平由 `balancing_stack` 负责：遇到 `{`、`(`、`[` 就压栈，变量/语句的结束符只有在栈为空时才会被匹配，因此 `{{ {'a': 1} }}` 这种写法不会提前结束变量块，栈不配对时直接抛 `TemplateSyntaxError`。`tokeniter` 产出的是 `(lineno, token, value)` 三元组，`wrap` 再把它们转成 `Token` 命名元组，负责字符串反转义、整数/浮点字面量转换和运算符到 token 类型的映射。切词前后还有两道扩展钩子：`Environment._tokenize` 先让各扩展的 `preprocess` 改写源码，切完词后再让每个扩展的 `filter_stream` 过滤 token 流。",
+        "evidence": [
+          { "file": "src/jinja2/lexer.py", "startLine": 669, "endLine": 760, "symbol": "tokeniter" },
+          { "file": "src/jinja2/lexer.py", "startLine": 615, "endLine": 667, "symbol": "wrap" },
+          { "file": "src/jinja2/environment.py", "startLine": 661, "endLine": 680, "symbol": "_tokenize" }
+        ],
+        "mustMention": [
+          "tokeniter 用状态栈在 root/variable_begin/block_begin/raw_begin 之间切换",
+          "空白控制在 OptionalLStrip 与 lstrip_blocks / trim_blocks 处生效",
+          "balancing_stack 维护括号配平，不配平时抛 TemplateSyntaxError",
+          "wrap 把三元组转成 Token 并做字面量转换",
+          "扩展的 preprocess 在切词前、filter_stream 在切词后生效"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q14",
+      "question": "模板里的 `{% for %}`、`{% include %}`、`{% macro %}` 这些标签是怎么变成 AST 节点的？`Parser.parse_statement` 的分派规则、`parse_statements` 里的 end_tokens 结束标记机制、以及 `subparse` 怎么把纯文本（TemplateData）和语句混在同一个 body 列表里？最后产出的 `nodes.Output` 和 `nodes.For` 节点分别长什么样（它们的 `fields` 是怎么声明的）？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Parser.parse_statement` 是标签分派的入口：它先要求当前 token 类型为 name，把标签名压进 `_tag_stack`；名字在 `_statement_keywords` 集合里就按 `parse_<标签名>` 动态找到 `parse_for`、`parse_if`、`parse_include`、`parse_macro` 等方法调用，\"call\" 走 `parse_call_block`，\"filter\" 走 `parse_filter_block`，再否则就去 `self.extensions` 里查扩展实现的 `parse`，全都对不上就调用 `fail_unknown_tag` 报错。`parse_statements` 负责解析一段语句体：它允许 Python 风格的冒号开头，跳过 `block_end`，然后以 `end_tokens`（比如 `(\"name:endfor\", \"name:else\")`）为终止条件调用 `subparse`，中途先遇到 eof 就用 `fail_eof` 给出“意外结束模板”的提示。`subparse` 负责把纯文本和语句混进同一个 body 列表：遇到 data token 就把内容包成 `nodes.TemplateData` 放进缓冲区，遇到 variable_begin 就解析出一个表达式同样放进缓冲区，遇到 block_begin 才先把缓冲区 `flush_data` 成一个 `nodes.Output` 节点，再追加真正的语句节点。所以模板里的一段文字后面跟着 `{{ x }}` 时，两者会落在同一个 `Output` 节点里；最终顶层 `parse` 只是把 `subparse()` 的结果包成 `nodes.Template` 并设置好 environment。节点侧的约定由 `nodes` 模块固定：`Output` 的 `fields` 是 `(\"nodes\",)`，装着一串待输出的表达式；`For` 的 `fields` 是 `(\"target\", \"iter\", \"body\", \"else_\", \"test\", \"recursive\")`，分别对应循环变量、可迭代对象、循环体、else 分支、可选的过滤表达式和递归标记。",
+        "evidence": [
+          { "file": "src/jinja2/parser.py", "startLine": 167, "endLine": 194, "symbol": "parse_statement" },
+          { "file": "src/jinja2/parser.py", "startLine": 996, "endLine": 1044, "symbol": "subparse" },
+          { "file": "src/jinja2/nodes.py", "startLine": 303, "endLine": 336, "symbol": "Output" }
+        ],
+        "mustMention": [
+          "parse_statement 按 _statement_keywords 动态分派到 parse_xxx 方法",
+          "未知标签会查扩展的 parse，都没有就 fail_unknown_tag",
+          "parse_statements 用 end_tokens 作为子解析的终止条件",
+          "subparse 用缓冲区把 TemplateData 与变量表达式合并成 Output 节点",
+          "nodes.Output 与 nodes.For 用 fields 声明字段"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q15",
+      "question": "模板是怎么从磁盘或字典里加载成 `Template` 对象的？`BaseLoader.load` 里 `get_source` 的三件套契约（source、filename、uptodate）分别起什么作用，`split_template_path` 为什么要拦掉 `..`（`os.path.pardir`，直接抛 `TemplateNotFound`），`Environment.get_template` 又是怎么跟 loader 配合的（`join_path`、`globals`、`parent`、`_load_template`）？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "加载的入口是 `BaseLoader.load`：它先调用子类的 `get_source(environment, name)`，约定返回三元组 `(source, filename, uptodate)`——源码文本交给编译器，文件名用于 traceback 定位，`uptodate` 是一个无参闭包，缓存命中且环境开了 `auto_reload` 时由它判断文件是否已经变了。拿到源码后，若环境配了 `bytecode_cache`，就先 `bcc.get_bucket` 取已有字节码，字节码没有才调 `environment.compile` 重新编译，编译完再把 code 写回 bucket，最后用 `environment.template_class.from_code` 把 code object 变成 `Template` 对象。`split_template_path` 是路径安全闸：模板名按 `/` 切成若干段，任何一段里出现 `os.path.sep`（Windows 上是反斜杠）、`os.path.altsep` 或等于 `..`（pardir）都会直接抛 `TemplateNotFound`，空段和 `.` 段则被丢掉，以此阻止模板名穿越到模板根目录之外。`Environment.get_template` 负责把名字接到 loader 上：传进来的是 `Template` 实例就直接原样返回，带 `parent` 参数时先用 `join_path` 拼出真实名字（默认实现原样返回，可被子类覆盖成相对路径语义），最后调用 `_load_template` 走缓存或真正加载，而 `_load_template` 的缓存键是 `(loader 弱引用, 模板名)`。",
+        "evidence": [
+          { "file": "src/jinja2/loaders.py", "startLine": 107, "endLine": 149, "symbol": "load" },
+          { "file": "src/jinja2/loaders.py", "startLine": 25, "endLine": 39, "symbol": "split_template_path" },
+          { "file": "src/jinja2/environment.py", "startLine": 981, "endLine": 1016, "symbol": "get_template" }
+        ],
+        "mustMention": [
+          "get_source 返回 source、filename、uptodate 三元组",
+          "uptodate 闭包供 auto_reload 判断模板是否过期",
+          "有字节码缓存时先取 bucket，编译后再写回",
+          "split_template_path 遇到 .. 或路径分隔符就抛 TemplateNotFound",
+          "get_template 用 join_path 处理 parent 并最终走 _load_template"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q16",
+      "question": "Jinja 的异常层级是怎么设计的？`TemplateError` 是不是所有模板异常的基类，`TemplateNotFound`、`TemplatesNotFound`、`TemplateSyntaxError`、`TemplateRuntimeError`、`UndefinedError`、`FilterArgumentError` 各自继承谁、定义在哪一段？`TemplateSyntaxError` 的 `__str__` 又是怎么把 `lineno`、`filename` 和出错源码行拼成带 location 的 \"File ..., line N\" 报错信息的，`Parser.fail` 又是从哪儿把它抛出来的？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "所有模板异常的根是 `TemplateError`，它继承自 `Exception`，只额外提供了一个 `message` 属性。分支大致是三条：`TemplateNotFound` 同时继承 `IOError` 和 `LookupError`（所以按 IO 错误或 KeyError 去 catch 都能抓到），多模板选择失败时抛的 `TemplatesNotFound` 又是 `TemplateNotFound` 的子类；语法层面的 `TemplateSyntaxError` 直接继承 `TemplateError`，编译期断言类错误 `TemplateAssertionError` 是它的子类；运行期的 `TemplateRuntimeError` 也继承 `TemplateError`，而 `UndefinedError`、`SecurityError`、`FilterArgumentError` 都挂在 `TemplateRuntimeError` 之下。`TemplateSyntaxError` 额外带着 `lineno`、`name`、`filename`、`source` 四个信息，它的 `__str__` 会把消息、`File \"xxx\", line N` 的定位行以及（如果拿到了 source）出错的那一行源码拼成多行文本返回。语法错误一般由 `Parser.fail` 抛出，它把消息、行号、模板名和文件名一起塞进 `TemplateSyntaxError`，所以行号能一路带到最终报错信息里。",
+        "evidence": [
+          { "file": "src/jinja2/exceptions.py", "startLine": 7, "endLine": 51, "symbol": "TemplateError" },
+          { "file": "src/jinja2/exceptions.py", "startLine": 88, "endLine": 136, "symbol": "TemplateSyntaxError" },
+          { "file": "src/jinja2/parser.py", "startLine": 76, "endLine": 88, "symbol": "TemplateSyntaxError" }
+        ],
+        "mustMention": [
+          "TemplateError 是所有模板异常的基类",
+          "TemplateNotFound 同时继承 IOError 和 LookupError",
+          "TemplatesNotFound 是 TemplateNotFound 的子类",
+          "UndefinedError 与 FilterArgumentError 都在 TemplateRuntimeError 之下",
+          "TemplateSyntaxError.__str__ 拼出行号与出错源码行"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q17",
+      "question": "想在不渲染模板的情况下静态分析模板用到了哪些变量、引用了哪些模板，Jinja 提供了哪几个 API？`meta.find_undeclared_variables` 和 `meta.find_referenced_templates` 分别在哪个文件实现，它们内部是靠什么机制算出结果来的？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "这两个 API 都定义在 `meta.py`：`find_undeclared_variables(ast)` 返回模板运行时才会去 context 里查的变量集合，`find_referenced_templates(ast)` 则迭代出模板里 extends/include/import 引用到的模板名，名字是动态表达式时给出 `None`。它们的实现思路很特别——并不自己遍历 AST，而是复用了代码生成器：`meta` 里定义了一个 `TrackingCodeGenerator`，它继承 `CodeGenerator`，把 `write` 改成空操作（不产生任何代码），并在 `enter_frame` 里检查 `frame.symbols.loads`，凡是 action 为 \"resolve\" 且名字不在 `environment.globals` 里的就记进 `undeclared_identifiers`。引用模板的扫描走另一条路子：直接用 `ast.find_all` 找出 `Extends`、`FromImport`、`Import`、`Include` 四类节点，看它们的 `template` 字段是不是常量字符串，是就产出名字，是元组/列表就逐个产出，是动态表达式就产出 `None`。这套做法之所以可行，是因为编译期本来就有完整的符号分析（编译器里的 `UndeclaredNameVisitor` 正是判定“某个名字是否被未声明地使用”的访问者，遇到 `Block` 会停止深入），因此 `meta` 得到的变量集合和编译期看到的作用域是一致的；代价是它可能像编译一样抛出 `TemplateAssertionError`。",
+        "evidence": [
+          { "file": "src/jinja2/meta.py", "startLine": 34, "endLine": 55, "symbol": "find_undeclared_variables" },
+          { "file": "src/jinja2/meta.py", "startLine": 62, "endLine": 112, "symbol": "find_referenced_templates" },
+          { "file": "src/jinja2/compiler.py", "startLine": 271, "endLine": 292, "symbol": "UndeclaredNameVisitor" }
+        ],
+        "mustMention": [
+          "两个 API 都定义在 meta.py",
+          "find_undeclared_variables 靠 TrackingCodeGenerator 复用代码生成器",
+          "enter_frame 里检查 frame.symbols.loads 收集未声明变量",
+          "find_referenced_templates 用 find_all 找 Extends/FromImport/Import/Include",
+          "模板名是动态表达式时产出 None"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q18",
+      "question": "我要给 Jinja 写一个自定义扩展（Extension），源码里约定的写法是什么？扩展的 `tags` 怎么声明、`preprocess` 和 `filter_stream` 这两个钩子分别在哪个阶段被调用、`parse` 方法必须返回什么、`identifier` 和 `priority` 又分别是什么意思？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "写扩展要继承 `Extension` 基类：它的 `tags` 集合声明自己监听哪些标签（解析器读到这些标签名就会回调扩展的 `parse`），`priority` 决定多个扩展的处理顺序（值越小优先级越高，环境用 `iter_extensions` 排序遍历），`identifier` 由 `__init_subclass__` 自动填成 `模块名.类名`，扩展往模板里注入常量属性节点就是靠它来定位的。扩展有三个生命周期钩子：`preprocess(source, name, filename)` 在词法分析之前拿到整段源码，可以改写它；`filter_stream(stream)` 在切完 token 之后拿到 `TokenStream`，可以增删过滤 token；`parse(parser)` 在语法分析时、解析器读到匹配的标签名时被调用，必须返回一个或多个 AST 节点，习惯上用 `self.attr()` 造一个 `ExtensionAttribute` 节点、用 `self.call_method()` 造调用节点，再配合 `nodes.Output`、`nodes.Call` 组装出想要的输出。扩展实例是跟环境绑定的，不能把环境相关的数据存在 `self` 上；需要给另一个环境（比如 `Environment.overlay` 出来的）使用时，通过 `bind` 复制一份并替换 `environment` 属性即可。解析器侧的接线发生在 `Parser.__init__`：它遍历 `environment.iter_extensions()`，把每个扩展的 `parse` 方法按 `tags` 注册成 `self.extensions` 字典，所以标签名到扩展回调的映射在解析开始之前就建好了。",
+        "evidence": [
+          { "file": "src/jinja2/ext.py", "startLine": 55, "endLine": 98, "symbol": "Extension" },
+          { "file": "src/jinja2/ext.py", "startLine": 99, "endLine": 161, "symbol": "filter_stream" },
+          { "file": "src/jinja2/parser.py", "startLine": 53, "endLine": 74, "symbol": "extensions" }
+        ],
+        "mustMention": [
+          "tags 声明扩展监听的标签名",
+          "preprocess 在词法分析前改写源码",
+          "filter_stream 在切词后过滤 token 流",
+          "parse 必须返回一个或多个 AST 节点",
+          "identifier 由 __init_subclass__ 生成，priority 决定扩展顺序"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q19",
+      "question": "定义 macro（宏）以及用 call block 调用宏时，参数约定是怎样的？`parse_signature` 怎么解析形参和默认值，`macro_body` 生成代码时怎么处理 `caller`、`kwargs`、`varargs` 这几个特殊参数，运行时的 `Macro.__call__` 又是怎么把实参对上形参的？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`{% macro %}` 的形参列表由 `Parser.parse_signature` 解析：它先期待左括号，然后逐个把参数名解析成 `ctx` 为 \"param\" 的 `nodes.Name`，遇到 `=` 就把右边表达式收进 `defaults`，一旦出现“有默认值的参数后面又跟了没有默认值的参数”就直接报 `non-default argument follows default argument`。`CodeGenerator.macro_body` 负责把宏体编译成一个独立的 `macro(...)` 函数：它为宏建一个内部 frame，用 `find_undeclared` 找出宏体里是否用了 `caller`、`kwargs`、`varargs` 这三个特殊名字，用到才额外声明成函数形参（`caller` 如果同时出现在显式参数表里会被判为错误），没用到就不生成；每个形参在生成代码里都是 `if 参数名 is missing:` 的形式，缺参时填上默认值，没有默认值就造一个 `undefined(\"parameter 'x' was not provided\", name='x')`，宏体本身先 buffer 再统一输出。运行时 `Macro.__call__` 负责把实参对上形参：它先判断第一个参数是不是 `EvalContext`（决定这次调用的 autoescape），再按位置参数个数切分实参，剩余形参从关键字参数里取、取不到就置为 `missing`；如果宏声明了 `catch_kwargs` 就把剩余 kwargs 收成一个字典传进去，否则多余关键字参数直接抛 `TypeError`；`catch_varargs` 同理决定多余的位置参数是收成序列还是报“takes not more than N argument(s)”。最后它按 autoescape 决定把结果包成 `Markup` 还是原样返回。",
+        "evidence": [
+          { "file": "src/jinja2/parser.py", "startLine": 406, "endLine": 421, "symbol": "parse_signature" },
+          { "file": "src/jinja2/compiler.py", "startLine": 614, "endLine": 696, "symbol": "macro_body" },
+          { "file": "src/jinja2/runtime.py", "startLine": 719, "endLine": 770, "symbol": "catch_kwargs" }
+        ],
+        "mustMention": [
+          "parse_signature 解析形参并要求默认值参数不能排在后面",
+          "macro_body 用 find_undeclared 判断 caller/kwargs/varargs 是否被使用",
+          "缺参时填默认值，没有默认值就造 Undefined",
+          "Macro.__call__ 按位置参数个数切分实参再填关键字参数",
+          "catch_kwargs / catch_varargs 决定是收集还是抛 TypeError"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q20",
+      "question": "模板里 `{{ user.name }}` 取不到值、`{{ user['name'] }}` 和 `{{ user.name }}` 结果不一样，源码里是怎么规定的？`Environment.getitem` 和 `Environment.getattr` 的查找顺序有什么差别，节点 `nodes.Getitem` 和 `nodes.Getattr` 的 `as_const` 在常量折叠时又是怎么走的（什么时候会抛 `Impossible`），取不到时最后会变成 `Undefined`，什么时候才会抛 `UndefinedError`（`_fail_with_undefined_error`）？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Environment.getitem` 和 `Environment.getattr` 是两条方向相反的查找规则：`getitem(obj, argument)` 先试 `obj[argument]`，捕获 `AttributeError`/`TypeError`/`LookupError` 后，如果参数是字符串就退化成 `getattr(obj, str(argument))`；`getattr(obj, attribute)` 则先试 `getattr(obj, attribute)`，失败再退化成 `obj[attribute]`。所以 `{{ user.name }}` 优先走属性、`{{ user['name'] }}` 优先走下标，只有首选路径不通时才会落到另一条路，在同一个对象上两者确实可能得到不同结果。两条路最终都失败时返回的不是异常，而是 `self.undefined(obj=obj, name=...)` 造出来的 `Undefined` 对象，所以模板里访问不存在的属性通常只是渲染成空串。编译期的常量折叠遵守同样的规则：`nodes.Getitem.as_const` 要求节点的 `ctx` 必须是 \"load\"，然后调用 `environment.getitem`；`nodes.Getattr.as_const` 调用 `environment.getattr`；两者一旦抛异常都会转成 `Impossible`，放弃折叠退回运行时求值。真正把“取不到值”变成硬错误的是 `Undefined` 的运算符与属性访问：`Undefined.__getattr__` 对 dunder 名字抛 `AttributeError` 以免干扰 Python 内部协议，其他任何属性访问都走 `_fail_with_undefined_error` 抛 `UndefinedError`。",
+        "evidence": [
+          { "file": "src/jinja2/environment.py", "startLine": 466, "endLine": 497, "symbol": "getattr" },
+          { "file": "src/jinja2/nodes.py", "startLine": 833, "endLine": 876, "symbol": "Getitem" },
+          { "file": "src/jinja2/runtime.py", "startLine": 861, "endLine": 871, "symbol": "__getattr__" }
+        ],
+        "mustMention": [
+          "getitem 优先下标、getattr 优先属性，失败才互相退化",
+          "两条路都失败时返回 Undefined 而不是抛异常",
+          "Getitem/Getattr 的 as_const 要求 ctx 为 load 并调用 environment 的对应方法",
+          "as_const 失败会抛 Impossible 从而放弃常量折叠",
+          "Undefined 的属性访问最终抛 UndefinedError"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q21",
+      "question": "模板运行时报错时，traceback 怎么指向模板源码而不是编译后的 Python 代码？`rewrite_traceback_stack` 是怎么改写栈帧的，`get_corresponding_lineno` 靠什么把字节码行号映射回模板行号，`internalcode` 标记过的栈帧又为什么会被跳过？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`rewrite_traceback_stack` 必须在 `except` 块里调用，它用 `sys.exc_info()` 取出当前异常和 traceback，然后重建整条栈：如果异常是 `TemplateSyntaxError` 且尚未翻译过，就标记 `translated`、挂上源码、清掉原 traceback 并造一个指向模板文件对应行的假栈帧；否则先跳过渲染函数本身那一帧。接着它遍历剩下的栈帧，帧的 code 对象在 `internal_code` 集合里的直接丢弃（这些是 `@internalcode` 标记的内部调用，对排查模板问题没有帮助），其余帧如果 `f_globals` 里有 `__jinja_template__`，说明它执行的是模板编译产物，就用 `template.get_corresponding_lineno(tb.tb_lineno)` 把字节码行号换算回模板行号，再造一个 `fake_traceback` 替换掉原来那一帧。字节码行号和模板行号之所以对不上，是因为编译时记录的 `debug_info` 是一串 `模板行=代码行` 的映射，`get_corresponding_lineno` 就是倒着扫这份映射、返回第一个满足 `代码行 <= 传入行号` 的条目对应的模板行号，找不到就返回 1。",
+        "evidence": [
+          { "file": "src/jinja2/debug.py", "startLine": 14, "endLine": 73, "symbol": "rewrite_traceback_stack" },
+          { "file": "src/jinja2/environment.py", "startLine": 1482, "endLine": 1490, "symbol": "get_corresponding_lineno" },
+          { "file": "src/jinja2/utils.py", "startLine": 98, "endLine": 103, "symbol": "internalcode" }
+        ],
+        "mustMention": [
+          "rewrite_traceback_stack 在 except 块中重建整条栈",
+          "TemplateSyntaxError 会先被翻译并挂上源码",
+          "带 __jinja_template__ 的帧用 get_corresponding_lineno 换算行号",
+          "internal_code 集合中的内部帧被直接跳过",
+          "get_corresponding_lineno 靠 debug_info 的模板行=代码行映射反查"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q22",
+      "question": "模板里用错过滤器和测试时常见的报错是从哪里抛出来的？比如 `|map` 忘了写要应用的过滤器名会报 `FilterArgumentError`，`is` 后面也不能连写多个测试（`parse_test` 里那句 \"You cannot chain multiple tests with is\"），这些检查分别落在哪个函数里？`FilterArgumentError` 本身又继承自哪个异常？",
+      "category": "debugging",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "`|map` 这类过滤器的参数检查集中在 `filters.prepare_map`：如果传的是 `attribute=` 关键字，它会把它和 `default` 一起取出来，剩下的关键字参数一个都不允许（多传就抛 `FilterArgumentError`）；否则它把第一个位置参数当成要应用的过滤器名，从 `args` 里取不到就直接抛 `FilterArgumentError(\"map requires a filter argument\")`，取到后构造一个对每个元素调用 `environment.call_filter` 的闭包。`|select`/`|reject` 走同一套机制，`prepare_select_or_reject` 同样会为缺少属性名或测试名抛 `FilterArgumentError`，测试名取不到时干脆退回用 `bool` 过滤。测试表达式本身的限制在 `Parser.parse_test`：`is not` 会被包成 `nodes.Not`，测试名支持点号形式，后面跟括号就按普通调用参数解析；不跟括号但后面是 name/string/integer/float/括号/方括号/花括号时，会把那个表达式当作唯一参数；如果这个参数本身又是 `is`，就报 `You cannot chain multiple tests with is`。`FilterArgumentError` 继承自 `TemplateRuntimeError`，而 `TemplateRuntimeError` 又继承 `TemplateError`，所以它是运行期错误而不是语法错误，模板还能渲染到一半才失败。",
+        "evidence": [
+          { "file": "src/jinja2/filters.py", "startLine": 1724, "endLine": 1749, "symbol": "prepare_map" },
+          { "file": "src/jinja2/parser.py", "startLine": 958, "endLine": 994, "symbol": "parse_test" },
+          { "file": "src/jinja2/exceptions.py", "startLine": 139, "endLine": 165, "symbol": "FilterArgumentError" }
+        ],
+        "mustMention": [
+          "prepare_map 在缺少过滤器名时抛 FilterArgumentError",
+          "prepare_select_or_reject 缺少测试名时退回用 bool",
+          "parse_test 不允许用 is 连写多个测试",
+          "is not 会被包成 nodes.Not",
+          "FilterArgumentError 继承自 TemplateRuntimeError"
+        ]
+      },
+      "humanScore": 5
     }
   ]
 }

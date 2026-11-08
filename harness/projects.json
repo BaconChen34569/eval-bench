@@ -1,0 +1,36 @@
+{
+  "projects": [
+    {
+      "id": "flask",
+      "label": "Flask",
+      "dataset": "datasets/flask.json",
+      "repoRoot": "../corpus/repos/flask-3.1.3",
+      "runFrom": { "report": "out/report-r4.json", "ladderStepId": "v7" },
+      "judgeValidation": "out/projects/flask-judge.json"
+    },
+    {
+      "id": "requests",
+      "label": "Requests",
+      "dataset": "datasets/requests.json",
+      "repoRoot": "../corpus/repos/requests-2.34.2",
+      "run": "out/projects/requests.json",
+      "judgeValidation": "out/projects/requests-judge.json"
+    },
+    {
+      "id": "werkzeug",
+      "label": "Werkzeug",
+      "dataset": "datasets/werkzeug.json",
+      "repoRoot": "../corpus/repos/werkzeug-3.1.9",
+      "run": "out/projects/werkzeug.json",
+      "judgeValidation": "out/projects/werkzeug-judge.json"
+    },
+    {
+      "id": "jinja2",
+      "label": "Jinja2",
+      "dataset": "datasets/jinja2.json",
+      "repoRoot": "../corpus/repos/jinja2-3.1.6",
+      "run": "out/projects/jinja2.json",
+      "judgeValidation": "out/projects/jinja2-judge.json"
+    }
+  ]
+}

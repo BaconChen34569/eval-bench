@@ -1,4 +1,82 @@
 /**
+ * 多项目对比中的一行：一个开源项目在同一套配置下的成绩。
+ *
+ * 回答的是「这套评测台换个仓库还灵不灵」。
+ * 每个项目都必须用同一份配置（同一套切分、同一套检索、同一版提示词），
+ * 否则横向的数字比的不是模型，是配置。
+ */
+export interface ProjectComparisonRow {
+  /** 项目标识，如 flask */
+  project: string;
+  /** 展示名，如「Flask」 */
+  label: string;
+  /** 被测仓库标识 */
+  repo: string;
+  /** 仓库规模：文件数与总行数，说明这些项目并不一样大 */
+  fileCount: number;
+  repoLines: number;
+  /** 题目数 */
+  questions: number;
+  /** 被测模型 id */
+  model: string;
+  /** 打分模型 id */
+  judgeModel: string;
+  chunking: ChunkingStrategy;
+  retrieval: RetrievalConfig;
+  promptVersion: PromptVersion;
+  /** 成功率：judge 打分达到阈值的比例 */
+  successRate: number;
+  avgJudgeScore: number;
+  /** 证据召回率：答案引用的位置里有多少是标准答案要求的 */
+  avgEvidenceRecall: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  totalCost: number;
+  totalTokens: number;
+  /** 按题目类别分的成功情况 */
+  byCategory: Record<string, { total: number; success: number }>;
+  /**
+   * 这把尺子在本项目的人工参考答案上的一致率。
+   *
+   * 尺子自己也会犯错：它给人工写的标准答案打的分如果和人工评分差得多，
+   * 那它给 Agent 打的分就没什么参考价值。这个数字是整套对比的地基。
+   */
+  judgeValidation?: JudgeValidation;
+  /** 检索层指标，这一层不花钱、结果完全可复现 */
+  retrievalMetrics: {
+    recallAt1: number;
+    recallAt3: number;
+    recallAt6: number;
+    /** 按这一轮自己的预算算的召回率（topK=10 就是 recall@10） */
+    recallAtBudget: number;
+    mrr: number;
+    avgContextChars: number;
+    chunkCount: number;
+  };
+  /** 逐题得分，站上做项目间逐题对照 */
+  caseScores: { questionId: string; judgeScore: number; evidenceRecall: number }[];
+}
+
+/**
+ * 多项目对比。
+ *
+ * 四个项目共用一份配置跑同一把尺子，得到的横向快照。
+ */
+export interface MultiProjectComparison {
+  /** 产出这组数字的评测台代码版本 */
+  codeVersion: string;
+  /** 共用配置来自阶梯的哪一轮，如 v7 */
+  step: string;
+  chunking: ChunkingStrategy;
+  retrieval: RetrievalConfig;
+  promptVersion: PromptVersion;
+  /** 成功判定阈值 */
+  successThreshold: number;
+  rows: ProjectComparisonRow[];
+  note: string;
+}
+
+/**
  * 评测集与运行结果的数据契约。
  * 站点直接消费 harness/out 产出的 JSON，因此这里是前后端唯一的真相来源。
  */
@@ -476,4 +554,6 @@ export interface ExperimentReport {
   changes?: string[];
   /** 多模型对比，站点用它展示这把尺子有没有区分度 */
   modelComparison?: ModelComparison;
+  /** 多项目对比，站点用它展示这把尺子换个仓库还灵不灵 */
+  multiProject?: MultiProjectComparison;
 }
