@@ -165,7 +165,7 @@ const CHAPTERS: {
     id: "agent",
     numeral: "1",
     title: "课设 Copilot 实战问答",
-    lead: "先看东西本身：给它一个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。下面按题号挑一道，看它当时到底怎么答的——包括答错的时候。",
+    lead: "先看东西本身：给它 Flask 3.1.3 这个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。下面按题号挑一道，看它当时到底怎么答的——包括答错的时候。",
     sections: [
       { id: "agent", label: "它是怎么工作的", short: "怎么工作" },
       { id: "ask", label: "实战问答", short: "问答" },
@@ -175,7 +175,7 @@ const CHAPTERS: {
     id: "method",
     numeral: "2",
     title: "评测台怎么测",
-    lead: "先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。",
+    lead: "先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。本章的实验都在 Flask 3.1.3 上跑。",
     sections: [
       { id: "why", label: "为什么先测检索层", short: "为什么" },
       { id: "experiment", label: "切分策略对比", short: "切分对比" },
@@ -188,7 +188,7 @@ const CHAPTERS: {
     id: "result",
     numeral: "3",
     title: "结论有多硬",
-    lead: "把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。",
+    lead: "把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。前三节都是 Flask 上的迭代史，最后一节把它扩到四个仓库。",
     sections: [
       ...(report.baseline
         ? [{ id: "baseline", label: "优化前后", short: "前后" }]
@@ -208,7 +208,7 @@ const CHAPTERS: {
     id: "evidence",
     numeral: "4",
     title: "证据与复现",
-    lead: "每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。",
+    lead: "每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。逐题证据与失败分类都来自 Flask 3.1.3。",
     sections: [
       { id: "questions", label: "逐题检索台", short: "逐题" },
       { id: "failures", label: "失败归因", short: "失败" },
@@ -229,13 +229,22 @@ const NAV_ITEMS = CHAPTERS.flatMap((chapter) =>
 );
 
 /** 章节标题：24px/600，悬停时露出一个锚点，方便评委直接引用某一节。 */
-function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
+function SectionTitle({
+  id,
+  scope,
+  children,
+}: {
+  id: string;
+  scope?: string;
+  children: ReactNode;
+}) {
   return (
     <h3
       id={id}
-      className="group flex items-baseline gap-2 text-2xl font-semibold tracking-tight"
+      className="group flex flex-wrap items-baseline gap-2 text-2xl font-semibold tracking-tight"
     >
       {children}
+      {scope ? <ScopeBadge text={scope} /> : null}
       <a
         href={`#${id}`}
         aria-label="本节链接"
@@ -244,6 +253,20 @@ function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
         #
       </a>
     </h3>
+  );
+}
+
+/**
+ * 适用范围标签：这一节的数字是在哪个仓库上跑出来的。
+ *
+ * 页面里既有单个仓库（Flask）的结论，也有四个仓库的横向对比，
+ * 不标清楚读者会以为所有数字都来自同一套题。
+ */
+function ScopeBadge({ text }: { text: string }) {
+  return (
+    <span className="rounded-full border bg-muted/40 px-2.5 py-0.5 align-middle text-xs font-normal font-medium text-muted-foreground">
+      {text}
+    </span>
   );
 }
 
@@ -483,6 +506,14 @@ export default function App() {
               {questions.length} 道代码问答题，每道题写清楚了答案必须落在哪几行代码上，
               再用同一套检索器去比较不同切分策略，把失败精确地定位到文件、行号和缺失的要点。
             </p>
+            <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">先说清楚数据的范围：</span>
+              第 1、2 章和第 3 章的前三节，所有数字都来自{" "}
+              <span className="font-mono text-foreground">Flask 3.1.3</span>{" "}
+              这一个仓库——22 道题、一套检索器、一把尺子。
+              第 3 章最后一节「多项目对比」才把它扩到 Flask / Requests / Werkzeug /
+              Jinja2 四个仓库，看这把尺子换仓库还灵不灵。页面里每一节标题旁边都标了这一节的数据来自哪里。
+            </p>
             {/* 首屏不放散装链接，直接给四章目录：读完这一行就知道整页怎么走。 */}
             <div className="grid w-full gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {CHAPTERS.map((chapter) => (
@@ -522,23 +553,23 @@ export default function App() {
             <Metric
               label="最高成功率"
               value={formatPercent(headlineRun?.summary.successRate ?? 0)}
-              hint={`${headlineRun?.chunking.label} · top-${headlineRun?.retrieval.topK} · ${questions.length} 题里 ${Math.round((headlineRun?.summary.successRate ?? 0) * questions.length)} 题达标`}
+              hint={`Flask · ${headlineRun?.chunking.label} · top-${headlineRun?.retrieval.topK} · ${questions.length} 题里 ${Math.round((headlineRun?.summary.successRate ?? 0) * questions.length)} 题达标`}
               accent
             />
             <Metric
               label="失败里有多少是定位错了"
               value={`${Math.round((headlineWrongLocation / Math.max(headlineFailed.length, 1)) * 100)}%`}
-              hint={`${headlineFailed.length} 次失败中 ${headlineWrongLocation} 次，瓶颈在检索侧`}
+              hint={`Flask · ${headlineFailed.length} 次失败中 ${headlineWrongLocation} 次，瓶颈在检索侧`}
             />
             <Metric
               label="judge 自检一致率"
               value={formatPercent(report.judgeValidation.agreement)}
-              hint={`${report.judgeValidation.sampled} 题人工参考答案 · judge 均分 ${report.judgeValidation.meanJudgeScore.toFixed(2)} vs 人工 ${report.judgeValidation.meanHumanScore.toFixed(2)}`}
+              hint={`Flask · ${report.judgeValidation.sampled} 题人工参考答案 · judge 均分 ${report.judgeValidation.meanJudgeScore.toFixed(2)} vs 人工 ${report.judgeValidation.meanHumanScore.toFixed(2)}`}
             />
             <Metric
               label="评测集"
               value={`${questions.length} 题 · ${formatNumber(repoLines)} 行`}
-              hint={`${fileCount} 个文件 · 证据人工标注到行号`}
+              hint={`Flask 3.1.3 · ${fileCount} 个文件 · 证据人工标注到行号`}
             />
           </div>
         </header>
@@ -550,7 +581,7 @@ export default function App() {
           id="chapter-agent"
           numeral="1"
           title="课设 Copilot 实战问答"
-          lead="先看东西本身：给它一个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。下面每一段回答都是真实运行记录，不是演示动画。"
+          lead="先看东西本身：给它 Flask 3.1.3 这个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。下面每一段回答都是真实运行记录，不是演示动画。"
           first
         />
 
@@ -612,7 +643,9 @@ export default function App() {
 
         <section id="ask" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <SectionTitle id="ask">实战问答：挑一道题看它怎么答</SectionTitle>
+            <SectionTitle id="ask" scope="Flask 3.1.3 · 22 道题">
+              实战问答：挑一道题看它怎么答
+            </SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
               下面是 {questions.length} 道题，每道题一个题号。挑一个，下面就是完整的一次问答：
               问题、它拿到的代码块、它写出的答案、judge 的判语。
@@ -627,7 +660,7 @@ export default function App() {
           id="chapter-method"
           numeral="2"
           title="评测台怎么测"
-          lead="先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。"
+          lead="先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。本章的实验都在 Flask 3.1.3 上跑。"
         />
 
         <section id="why" className="scroll-mt-16 mt-8 flex flex-col gap-6">
@@ -666,7 +699,9 @@ export default function App() {
 
         <section id="experiment" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <SectionTitle id="experiment">切分策略对比实验</SectionTitle>
+            <SectionTitle id="experiment" scope="Flask 3.1.3">
+              切分策略对比实验
+            </SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
               同一个仓库、同一套检索器（BM25 + 结构感知重排 + 中英术语扩展）、
               同样的 top-6 召回预算，只改变代码块的切法：
@@ -752,7 +787,9 @@ export default function App() {
             className="scroll-mt-16 mt-12 flex flex-col gap-6"
           >
             <div className="flex flex-col gap-2">
-              <SectionTitle id="generation">生成层结果</SectionTitle>
+              <SectionTitle id="generation" scope="Flask 3.1.3">
+                生成层结果
+              </SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
                 检索层决定「模型能看到什么」，生成层决定「模型看到之后答得怎么样」。
                 同一批题、同一套检索结果，分别喂给三种切分策略下的上下文，
@@ -1052,13 +1089,15 @@ export default function App() {
           id="chapter-result"
           numeral="3"
           title="结论有多硬"
-          lead="把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。"
+          lead="把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。前三节都是 Flask 上的迭代史，最后一节把它扩到四个仓库。"
         />
 
         {report.baseline && (
           <section id="baseline" className="scroll-mt-16 mt-10 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <SectionTitle id="baseline">优化前后</SectionTitle>
+              <SectionTitle id="baseline" scope="Flask 3.1.3">
+                优化前后
+              </SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
                 评测台自己也会犯错，也会用错方法。这一节把上一版跑出来的记录
                 原样搬过来，和当前版本逐题对照——
@@ -1076,7 +1115,9 @@ export default function App() {
         {ladder.length > 0 && (
           <section id="ladder" className="scroll-mt-16 mt-12 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <SectionTitle id="ladder">工具迭代史</SectionTitle>
+              <SectionTitle id="ladder" scope="Flask 3.1.3">
+                工具迭代史
+              </SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
                 上面回答的是「哪种切法更好」。这一节回答另一个问题：
                 <span className="font-medium text-foreground">
@@ -1129,9 +1170,11 @@ export default function App() {
         {modelComparison && (
           <section id="models" className="scroll-mt-16 mt-12 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <SectionTitle id="models">多模型对比：这把尺子分不分得出好坏</SectionTitle>
+              <SectionTitle id="models" scope="Flask 3.1.3 · 22 道题">
+                多模型对比：这把尺子分不分得出好坏
+              </SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                前面所有数字都来自同一个模型。现在把被测对象换掉：
+                前面所有数字都来自同一个模型、同一个仓库（Flask 3.1.3）。现在把被测对象换掉：
                 <span className="font-medium text-foreground">
                   同一份配置、同一批题，换三个模型来答
                 </span>
@@ -1153,11 +1196,14 @@ export default function App() {
         {multiProject && (
           <section id="projects" className="scroll-mt-16 mt-12 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <SectionTitle id="projects">
+              <SectionTitle
+                id="projects"
+                scope="Flask / Requests / Werkzeug / Jinja2"
+              >
                 多项目对比：换个仓库这把尺子还灵不灵
               </SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                前面所有数字都来自一个仓库。这就把结论的适用范围限死在了一个项目上——
+                前面所有数字都来自一个仓库（Flask 3.1.3）。这就把结论的适用范围限死在了一个项目上——
                 换一套代码风格、换一种目录组织、换一个规模，它还量得出同样的东西吗？
                 这里把被测对象换成四个真实项目：
                 <span className="font-medium text-foreground">
@@ -1176,12 +1222,14 @@ export default function App() {
           id="chapter-evidence"
           numeral="4"
           title="证据与复现"
-          lead="每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。"
+          lead="每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。逐题证据与失败分类都来自 Flask 3.1.3。"
         />
 
         <section id="questions" className="scroll-mt-16 mt-10 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <SectionTitle id="questions">逐题检索台</SectionTitle>
+            <SectionTitle id="questions" scope="Flask 3.1.3">
+              逐题检索台
+            </SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
               每道题都可以展开，对比三种策略各自把哪些代码块排在了前面，
               以及标准答案要求的位置有没有被命中。实心圆是命中，空心圆是没有覆盖到证据。
@@ -1192,7 +1240,9 @@ export default function App() {
 
         <section id="failures" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <SectionTitle id="failures">失败归因</SectionTitle>
+            <SectionTitle id="failures" scope="Flask 3.1.3">
+              失败归因
+            </SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
               失败不是一句「模型不行」。这里把 top-6 都没命中标准答案的题目单独挑出来，
               按类别归类，看看 Agent 到底是在哪一类问题上失手。
@@ -1247,7 +1297,9 @@ export default function App() {
 
         <section id="trust" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <SectionTitle id="trust">信任基础：judge 自己够不够准</SectionTitle>
+            <SectionTitle id="trust" scope="Flask 3.1.3">
+              信任基础：judge 自己够不够准
+            </SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
               用大模型给另一个大模型打分，会遇到一个循环论证的问题：分数到底准不准？
               我们的做法是先校验裁判本身——让 judge 去给<span className="font-medium text-foreground">人工写的参考答案</span>
@@ -1481,6 +1533,9 @@ node --experimental-strip-types src/cli.ts compare \\
               <CardTitle className="text-base">把数据带走</CardTitle>
               <CardDescription>
                 页面上的每个数字都能下载：CSV 可直接进 Excel，JSON 是评测流水线产出的原始报告。
+                除「多项目对比 CSV」外，其余 CSV 的数字都来自{" "}
+                <span className="font-mono text-foreground">Flask 3.1.3</span>{" "}
+                这一个仓库。
               </CardDescription>
             </CardHeader>
             <CardContent>

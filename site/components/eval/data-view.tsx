@@ -77,6 +77,15 @@ export function DataView() {
 
   return (
     <div id="data-view" className="flex flex-col gap-6">
+      <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+        <span className="font-medium text-foreground">
+          先说清楚范围：
+        </span>
+        本视图里的全部数字都来自{" "}
+        <span className="font-mono text-foreground">Flask 3.1.3</span>{" "}
+        这一个仓库（多模型对比一节是同一批 Flask 题换模型、换尺子重打）。
+        跨仓库的横向对比在叙事视图的「多项目对比」一节。
+      </p>
       <Card>
         <CardHeader>
           <CardTitle className="text-base">策略总览</CardTitle>
