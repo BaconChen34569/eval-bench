@@ -1,0 +1,423 @@
+{
+  "id": "werkzeug-v1",
+  "repo": "werkzeug",
+  "repoUrl": "https://github.com/pallets/werkzeug",
+  "language": "python",
+  "createdAt": "2026-11-08",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "werkzeug 的 `sansio` 层和 `wrappers` 层是怎么分工的？一次 WSGI 请求从 `environ` 变成 `Request` 对象、响应再变回 WSGI 三元组，中间依次经过了哪些类和方法？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`sansio.request.Request` 不依赖 WSGI，只做 HTTP 数据解析；`wrappers.request.Request` 继承它，`__init__` 从 `environ` 取方法、路径和查询串，头部用 `EnvironHeaders(environ)`。响应方向：`Response.__call__` 调 `get_wsgi_response`，由 `get_wsgi_headers` 和 `get_app_iter` 组成，后者对 HEAD、204、304 返回空 iterable。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/wrappers/request.py",
+            "startLine": 125,
+            "endLine": 145,
+            "symbol": "EnvironHeaders"
+          },
+          {
+            "file": "src/werkzeug/sansio/request.py",
+            "startLine": 116,
+            "endLine": 147,
+            "symbol": "query_string"
+          },
+          {
+            "file": "src/werkzeug/wrappers/response.py",
+            "startLine": 547,
+            "endLine": 578,
+            "symbol": "get_wsgi_response"
+          }
+        ],
+        "mustMention": [
+          "sansio 层不依赖 WSGI",
+          "从 environ 构造 EnvironHeaders",
+          "响应经 get_wsgi_response 转换",
+          "HEAD 与 204/304 返回空体"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q02",
+      "question": "`Map` 匹配一个 URL 时内部是怎么走的？静态段和动态段谁优先、动态段之间按什么排序，最后捕获到的字符串又是怎么变成 Python 值的？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "`MapAdapter.match` 调 `StateMachineMatcher.match`：每条 `Rule` 的 `_parts` 被编成状态机，`State.static` 是字典、`State.dynamic` 是 `(RulePart, State)` 列表，匹配时先试静态段再按序试动态段正则，`update()` 按 `RulePart.weight` 给 `dynamic` 排序。命中后用 `to_python` 转换捕获值，抛 `ValidationError` 则整体变成 `NoMatch`。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/routing/matcher.py",
+            "startLine": 113,
+            "endLine": 150,
+            "symbol": "state.dynamic"
+          },
+          {
+            "file": "src/werkzeug/routing/rules.py",
+            "startLine": 636,
+            "endLine": 641,
+            "symbol": "convobj.weight"
+          },
+          {
+            "file": "src/werkzeug/routing/matcher.py",
+            "startLine": 186,
+            "endLine": 201,
+            "symbol": "to_python"
+          }
+        ],
+        "mustMention": [
+          "静态段优先于动态段匹配",
+          "动态段按 RulePart.weight 排序",
+          "to_python 转换捕获值",
+          "ValidationError 变成 NoMatch"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q03",
+      "question": "`MapAdapter.build` 是怎么把 endpoint 和参数拼成 URL 的？werkzeug 为什么不直接用字符串模板，而是要构造 AST 再编译？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`MapAdapter.build` 更新 map 后由 `_partial_build` 按 endpoint 遍历候选规则，用 `Rule.suitable_for` 过滤参数不全的，剩下的交给 `Rule.build`。不用字符串模板，是因为 `_compile_builder` 手工拼 AST：静态片段是 `ast.Constant`，动态片段生成 `to_url()` 调用，再 `compile()` 出 `_build` 与 `_build_unknown`，多出的参数拼成 query string。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/routing/map.py",
+            "startLine": 810,
+            "endLine": 826,
+            "symbol": "suitable_for"
+          },
+          {
+            "file": "src/werkzeug/routing/rules.py",
+            "startLine": 727,
+            "endLine": 730,
+            "symbol": "_compile_builder"
+          },
+          {
+            "file": "src/werkzeug/routing/rules.py",
+            "startLine": 763,
+            "endLine": 772,
+            "symbol": "_convert"
+          }
+        ],
+        "mustMention": [
+          "build 经 _partial_build 选规则",
+          "suitable_for 判断参数是否齐全",
+          "构建函数由 AST 拼装并编译",
+          "多余参数拼成 query string"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q04",
+      "question": "`werkzeug.local` 里的 `Local` 和 `LocalStack` 是怎么做到「上下文隔离」的？源码里的做法和按线程隔离的做法相比有什么关键差异？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "`Local` 内部只保存一个 `ContextVar[dict]`，属性读写都落到 `self.__storage.get({})`；`__setattr__` 先 `.copy()` 再 `set()`，避免嵌套上下文之间就地改同一 dict。`LocalStack` 同理存 `ContextVar[list]`，`push` 复制后 append 再 `set`，`pop` 用 `stack[:-1]` 覆盖。因为基于 `contextvars`，隔离的是 context 而非线程。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/local.py",
+            "startLine": 82,
+            "endLine": 93,
+            "symbol": "__setattr__"
+          },
+          {
+            "file": "src/werkzeug/local.py",
+            "startLine": 140,
+            "endLine": 158,
+            "symbol": "push"
+          }
+        ],
+        "mustMention": [
+          "Local 内部用一个 ContextVar 存 dict",
+          "写属性先 copy 再 set",
+          "push/pop 也是复制后重设",
+          "隔离的是 context 而非线程"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q05",
+      "question": "`Request` 上的查询串参数、表单参数、文件上传和 JSON，分别是在哪个文件、哪个方法里解析出来的？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`sansio.request.Request.args` 用 `parse_qsl` 解析成 `ImmutableMultiDict`。表单和文件在 `wrappers.request.Request._load_form_data`：按 `want_form_data_parsed` 决定是否解析；`FormDataParser.parse` 按 mimetype 分派 multipart/urlencoded 分支。JSON 在 `Request.get_json`，先判 `is_json` 再 loads。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/wrappers/request.py",
+            "startLine": 268,
+            "endLine": 299,
+            "symbol": "_load_form_data"
+          },
+          {
+            "file": "src/werkzeug/sansio/request.py",
+            "startLine": 157,
+            "endLine": 177,
+            "symbol": "parse_qsl"
+          },
+          {
+            "file": "src/werkzeug/formparser.py",
+            "startLine": 241,
+            "endLine": 257,
+            "symbol": "_parse_multipart"
+          }
+        ],
+        "mustMention": [
+          "args 在 sansio 层用 parse_qsl",
+          "form/files 靠 _load_form_data",
+          "FormDataParser 按 mimetype 分派",
+          "get_json 先判 is_json 再 loads"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q06",
+      "question": "`multipart/form-data` 的解析具体在哪实现？为什么 werkzeug 要把「字节流解码成事件」和「事件组装成 form/files」拆到两个模块？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`sansio.multipart.MultipartDecoder` 是解码器，用 `preamble_re`/`boundary_re` 找 boundary，维护 `State` 状态机，产出 `Preamble`/`Field`/`File` 事件；`formparser.MultiPartParser.parse` 消费事件，`Field` 累积成表单值、`File` 写进 `stream_factory` 容器包成 `FileStorage`。限制归 formparser，sansio 不依赖 WSGI",
+        "evidence": [
+          {
+            "file": "src/werkzeug/sansio/multipart.py",
+            "startLine": 140,
+            "endLine": 160,
+            "symbol": "next_event"
+          },
+          {
+            "file": "src/werkzeug/sansio/multipart.py",
+            "startLine": 190,
+            "endLine": 196,
+            "symbol": "max_parts"
+          },
+          {
+            "file": "src/werkzeug/formparser.py",
+            "startLine": 377,
+            "endLine": 400,
+            "symbol": "max_form_memory_size"
+          }
+        ],
+        "mustMention": [
+          "MultipartDecoder 做字节级解码",
+          "MultiPartParser 消费事件组装表单",
+          "sansio 层不依赖 WSGI",
+          "限制交给 formparser 处理"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q07",
+      "question": "`ProxyFix` 中间件处理 `X-Forwarded-For` / `X-Forwarded-Proto` / `X-Forwarded-Host` 的代码具体在哪？它怎么从逗号分隔的列表里挑出可信值？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "代码在 `middleware/proxy_fix.py`。取值逻辑集中在 `ProxyFix._get_real_value`：用 `parse_list_header` 拆成列表，长度不足可信代理数就返回 None，否则取 `values[-trusted]`。`ProxyFix.__call__` 用它处理 `X-Forwarded-For`→`REMOTE_ADDR`、`X-Forwarded-Proto`→`wsgi.url_scheme`、`X-Forwarded-Host`→`HTTP_HOST`。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/middleware/proxy_fix.py",
+            "startLine": 105,
+            "endLine": 124,
+            "symbol": "_get_real_value"
+          },
+          {
+            "file": "src/werkzeug/middleware/proxy_fix.py",
+            "startLine": 150,
+            "endLine": 158,
+            "symbol": "x_for"
+          }
+        ],
+        "mustMention": [
+          "用 parse_list_header 拆分列表",
+          "可信值取 values[-trusted]",
+          "数量不足 trusted 返回 None",
+          "X-Forwarded-Host 改 HTTP_HOST"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q08",
+      "question": "werkzeug 的 `ImmutableMultiDict`、`ImmutableDict` 这类不可变类型是怎么实现的？调用方想改它们会发生什么，`copy()` 又返回什么？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "约定是用 mixin 组合实现不可变：`datastructures/mixins.py` 的 `ImmutableDictMixin`、`ImmutableMultiDictMixin` 把 `__setitem__`、`update`、`pop` 等写方法换成 `_immutable_error`，直接抛 `TypeError`。具体类 `ImmutableMultiDict` 只是把 mixin 与可变基类 `MultiDict` 组合；`copy()` 显式返回可变的 `MultiDict`。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/datastructures/mixins.py",
+            "startLine": 19,
+            "endLine": 21,
+            "symbol": "_immutable_error"
+          },
+          {
+            "file": "src/werkzeug/datastructures/mixins.py",
+            "startLine": 156,
+            "endLine": 169,
+            "symbol": "_immutable_error"
+          },
+          {
+            "file": "src/werkzeug/datastructures/structures.py",
+            "startLine": 981,
+            "endLine": 996,
+            "symbol": "ImmutableMultiDict"
+          }
+        ],
+        "mustMention": [
+          "不可变行为集中在 mixins.py",
+          "写操作抛 TypeError",
+          "copy() 返回可变 MultiDict",
+          "具体类用 mixin 加可变基类组合"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q09",
+      "question": "werkzeug 源码在类型标注上有什么统一约定？为什么 `routing/map.py` 里 `Map` 的类型提示要放进 `if t.TYPE_CHECKING:` 块？",
+      "category": "convention",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "统一约定是模块首行写 `from __future__ import annotations`，注解不求值，于是能用 `X | None` 新式联合类型；运行期用不到的类型统一放在 `if t.TYPE_CHECKING:` 块导入。`routing/map.py` 顶部就是这么做的：`WSGIEnvironment`、`Request`、`RuleFactory` 只在 TYPE_CHECKING 下导入，避免 routing 与 wrappers 形成运行时循环导入。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/routing/map.py",
+            "startLine": 1,
+            "endLine": 38,
+            "symbol": "from __future__ import annotations"
+          },
+          {
+            "file": "src/werkzeug/wrappers/response.py",
+            "startLine": 23,
+            "endLine": 28,
+            "symbol": "t.TYPE_CHECKING"
+          }
+        ],
+        "mustMention": [
+          "所有模块都开启注解延迟求值",
+          "注解用 X | None 新式联合",
+          "类型放在 t.TYPE_CHECKING 块",
+          "TYPE_CHECKING 导入避免循环依赖"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q10",
+      "question": "把 `ProxyFix` 放在应用前面后，为什么客户端仍然能伪造 `REMOTE_ADDR` 或 `Host`？源码里是用什么机制限制可信范围的？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "关键在 `ProxyFix._get_real_value`：它按可信代理数从列表右侧取值，`values = parse_list_header(value)`，只有 `len(values) >= trusted` 才取 `values[-trusted]`，否则不动 environ。所以每个头要单独配置信任数：`x_for`、`x_proto` 默认 1，而 `x_host`、`x_port`、`x_prefix` 默认 0（默认不信任）；信任数配得比实际代理链长，伪造值就会被当成真实 IP。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/middleware/proxy_fix.py",
+            "startLine": 105,
+            "endLine": 124,
+            "symbol": "_get_real_value"
+          },
+          {
+            "file": "src/werkzeug/middleware/proxy_fix.py",
+            "startLine": 89,
+            "endLine": 103,
+            "symbol": "x_for"
+          },
+          {
+            "file": "src/werkzeug/sansio/request.py",
+            "startLine": 229,
+            "endLine": 238,
+            "symbol": "trusted_hosts"
+          }
+        ],
+        "mustMention": [
+          "可信值取 values[-trusted]",
+          "长度不足 trusted 则不改 environ",
+          "x_host 等默认 0 不信任",
+          "信任数配错会伪造 IP"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q11",
+      "question": "为什么同一个 URL 有时返回 404、有时返回 405、有时又变成 308 跳转？这三种结果在源码里分别是怎么产生的？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "三种结果都在 `MapAdapter.match` 里判定，捕获 `NoMatch` 后：`have_match_for` 非空说明路径能匹配但方法不在 `rule.methods` 里，抛 `MethodNotAllowed`（405）；`websocket_mismatch` 抛 `WebsocketMismatch`；否则抛 `NotFound`（404）。少结尾斜杠且规则 `strict_slashes` 为真时，匹配器抛 `SlashRequired`，转成 `RequestRedirect`（308）。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/routing/map.py",
+            "startLine": 604,
+            "endLine": 629,
+            "symbol": "NoMatch"
+          },
+          {
+            "file": "src/werkzeug/routing/matcher.py",
+            "startLine": 88,
+            "endLine": 97,
+            "symbol": "have_match_for"
+          },
+          {
+            "file": "src/werkzeug/routing/matcher.py",
+            "startLine": 99,
+            "endLine": 111,
+            "symbol": "SlashRequired"
+          }
+        ],
+        "mustMention": [
+          "have_match_for 非空抛 405",
+          "websocket 不匹配抛异常",
+          "其余抛 NotFound",
+          "strict_slashes 转 308 跳转"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q12",
+      "question": "为什么在中间件里先读了 `request.get_data()`，后面视图函数里 `request.form` 就空了？werkzeug 源码里是怎么处理这个「流只能消费一次」的？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "因为 WSGI 输入流不可重复读。`Request.stream` 是 `get_input_stream` 返回的受限流，`get_data()` 一次性读完并缓存到 `self._cached_data`。`_load_form_data` 先用 `_get_stream_for_parsing()`：有缓存就用 `BytesIO(cached_data)` 重建流喂解析器，否则用可能已耗尽的 `self.stream`。另外 `request.data` 会先触发表单解析，表单请求上通常是空的。",
+        "evidence": [
+          {
+            "file": "src/werkzeug/wrappers/request.py",
+            "startLine": 301,
+            "endLine": 311,
+            "symbol": "_get_stream_for_parsing"
+          },
+          {
+            "file": "src/werkzeug/wrappers/request.py",
+            "startLine": 430,
+            "endLine": 439,
+            "symbol": "_cached_data"
+          },
+          {
+            "file": "src/werkzeug/wrappers/request.py",
+            "startLine": 378,
+            "endLine": 385,
+            "symbol": "parse_form_data=True"
+          }
+        ],
+        "mustMention": [
+          "WSGI 输入流只能消费一次",
+          "get_data 缓存到 _cached_data",
+          "_get_stream_for_parsing 重建流",
+          "request.data 在表单请求为空"
+        ]
+      },
+      "humanScore": 5
+    }
+  ]
+}

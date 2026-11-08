@@ -1,0 +1,435 @@
+{
+  "id": "requests-v1",
+  "repo": "requests",
+  "repoUrl": "https://github.com/psf/requests",
+  "language": "python",
+  "createdAt": "2026-11-08",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "在 `requests` 中，从调用 `Session.get(url)` 到拿到 `Response`，请求依次经过哪些关键方法和对象？`Request` 与 `PreparedRequest` 的职责边界在哪里？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "一次 `Session.get(url)` 会走完这条链路：`Session.request`（src/requests/sessions.py）先造一个只有 method、url、data 这些高层参数的 `Request`，再交给 `Session.prepare_request`，由 `merge_setting` 和 `merge_hooks` 把 session 级与 request 级的 headers、params、cookies、auth、hooks 合并，得到 `PreparedRequest`。`PreparedRequest.prepare`（src/requests/models.py）再按 `prepare_method`、`prepare_url`、`prepare_headers`、`prepare_cookies`、`prepare_body`、`prepare_auth`、`prepare_hooks` 的顺序填出真正要发的字节，其中 `prepare_auth` 必须放在最后，因为认证器需要看到已经准备完整的请求。接下来 `Session.send` 用 `get_adapter(url)` 选出适配器调用 `adapter.send`，拿到 `Response` 后跑 `dispatch_hook(\"response\")`、把响应里的 cookie 存回 session、交给 `resolve_redirects` 处理跳转，必要时预读 `r.content`；真正负责收发 socket 与组装 `Response` 的是 `HTTPAdapter.send` 和 `build_response`（src/requests/adapters.py）。",
+        "evidence": [
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 511,
+            "endLine": 555,
+            "symbol": "prepare_request"
+          },
+          {
+            "file": "src/requests/models.py",
+            "startLine": 422,
+            "endLine": 449,
+            "symbol": "prepare_auth"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 752,
+            "endLine": 791,
+            "symbol": "adapter.send"
+          }
+        ],
+        "mustMention": [
+          "先构造 Request 再 prepare_request",
+          "prepare_auth 必须最后执行",
+          "get_adapter 按 URL 前缀选适配器",
+          "响应 hook 由 dispatch_hook 派发"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q02",
+      "question": "`requests` 不靠 urllib3 而是自己处理重定向。`Session.resolve_redirects` 这个循环里具体做了哪几件事？重定向次数上限和认证头剥离是怎么判定的？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "重定向不是 urllib3 做的，而是 `SessionRedirectMixin.resolve_redirects`（src/requests/sessions.py）自己用一个 while 循环逐跳实现。每一跳先 `req.copy()` 复制原请求，把当前响应压进 `resp.history`，消费并 `close()` 掉旧响应以释放连接，然后由 `get_redirect_target` 取 `Location` 头并把 latin1 重新编码成 utf8；相对地址用 `urljoin` 拼接，fragment 按 RFC 7231 继承。接着 `rebuild_method` 改写请求方法，非 307、308 时还会删掉 `Content-Length`、`Content-Type`、`Transfer-Encoding` 并清空 body；`rebuild_auth` 借助 `should_strip_auth` 判断，跨主机时删除 `Authorization`；`rebuild_proxies` 按 `NO_PROXY` 重新算代理；cookie 则用 `extract_cookies_to_jar` 与 `merge_cookies` 合并后重新 `prepare_cookies`。跳数上限取 `self.max_redirects`，默认是 `DEFAULT_REDIRECT_LIMIT`，也就是 30（定义在 src/requests/models.py），超过就抛 `TooManyRedirects`。",
+        "evidence": [
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 186,
+            "endLine": 222,
+            "symbol": "resolve_redirects"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 240,
+            "endLine": 258,
+            "symbol": "purged_headers"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 154,
+            "endLine": 184,
+            "symbol": "should_strip_auth"
+          }
+        ],
+        "mustMention": [
+          "重定向由 requests 自己循环处理",
+          "默认 30 跳，超限抛 TooManyRedirects",
+          "跨主机时删除 Authorization 头",
+          "非 307/308 会清空 body"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q03",
+      "question": "请求体从 `data`/`json`/`files` 变成最终发出的字节，走了哪些步骤？`Content-Length` 和 `Transfer-Encoding: chunked` 分别在哪里被决定？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "请求体的组装集中在 `PreparedRequest.prepare_body`（src/requests/models.py）。`json` 参数先用 `complexjson.dumps(json, allow_nan=False)` 序列化再按 utf-8 编码，遇到 NaN 会抛 `InvalidJSONError`；`files` 走 `RequestEncodingMixin._encode_files` 拼成 multipart/form-data，并且不允许与流式 body 同时存在，否则抛 `NotImplementedError`；普通字典或列表交给 `_encode_params` 做 urlencode，并补上 `Content-Type: application/x-www-form-urlencoded`。长度由 `super_len`（src/requests/utils.py）算出来：优先用 `__len__`，其次用 `len` 属性，再用 `fileno()` 配合 `os.fstat`；对象有 `tell`、`seek` 而长度未知时，先 seek 到末尾取长度再退回原位置，最后返回总长减去当前位置。算得出长度就写 `Content-Length`，算不出就写 `Transfer-Encoding: chunked`；`prepare_content_length` 再兜一次底，非 GET、HEAD 且没有 body 时补 `Content-Length: 0`。而 `HTTPAdapter.send`（src/requests/adapters.py）会用 `chunked = not (request.body is None or \"Content-Length\" in request.headers)` 复算一次，再传给 `conn.urlopen`。",
+        "evidence": [
+          {
+            "file": "src/requests/models.py",
+            "startLine": 599,
+            "endLine": 628,
+            "symbol": "super_len"
+          },
+          {
+            "file": "src/requests/models.py",
+            "startLine": 652,
+            "endLine": 666,
+            "symbol": "prepare_content_length"
+          },
+          {
+            "file": "src/requests/adapters.py",
+            "startLine": 679,
+            "endLine": 708,
+            "symbol": "chunked"
+          }
+        ],
+        "mustMention": [
+          "json 用 allow_nan=False 编码",
+          "长度算不出就改用 chunked 编码",
+          "无 body 的非 GET 请求补长度 0",
+          "adapter 会重新计算 chunked 标志"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q04",
+      "question": "cookie 在 `requests` 里是怎么流动的？服务端返回的 `Set-Cookie` 如何进入 session，下一次请求又是怎么变成 `Cookie` 请求头的？",
+      "category": "architecture",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "cookie 是分两半流动的。响应侧，`Session.send`（src/requests/sessions.py）在拿到响应后调用 `extract_cookies_to_jar(self.cookies, request, r.raw)`，把服务端的 `Set-Cookie` 存进 session 的 `RequestsCookieJar`，若响应带 `history` 还会把历史响应的 cookie 补存一遍；`extract_cookies_to_jar`（src/requests/cookies.py）把 urllib3 响应包装成 `MockResponse` 与 `MockRequest` 后交给标准库 `http.cookiejar`，所以域名、路径、secure 这些策略都按 cookiejar 的规则判定。请求侧，`Session.prepare_request` 先用 `merge_cookies` 把 session 的 jar、请求自带的 jar 和字典合并成一个 jar，再交给 `PreparedRequest.prepare_cookies`（src/requests/models.py），由 `get_cookie_header` 生成 `Cookie` 头写进 headers。要留意 `prepare_cookies` 的 docstring 明确说明：由于 cookiejar 的设计，`Cookie` 头一旦生成就不会再重建，除非先把它从 headers 里删掉。",
+        "evidence": [
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 524,
+            "endLine": 533,
+            "symbol": "merge_cookies"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 791,
+            "endLine": 807,
+            "symbol": "extract_cookies_to_jar"
+          },
+          {
+            "file": "src/requests/models.py",
+            "startLine": 697,
+            "endLine": 718,
+            "symbol": "prepare_cookies"
+          }
+        ],
+        "mustMention": [
+          "响应 cookie 存进 session 的 jar",
+          "合并 cookie 用 merge_cookies",
+          "prepare_cookies 生成 Cookie 头",
+          "Cookie 头生成后不自动重建"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q05",
+      "question": "`super_len` 这个函数在源码的哪个文件、哪个位置？它是怎么算出一个对象的长度并处理当前位置的？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "实现在 `src/requests/utils.py` 的 `super_len`（160-228 行）。它按优先级依次寻找长度来源：有 `__len__` 就用 `len(o)`；否则有 `len` 属性就用它；否则有 `fileno()` 就用 `os.fstat(fileno).st_size` 取文件大小，并检查文件是不是以二进制模式打开，不是的话发一个 `FileModeWarning` 提醒长度可能算错。如果对象还有 `tell()`，就记下当前位置；对象有 `seek` 但长度未知时（典型是 StringIO、BytesIO），会先 `seek(0, 2)` 跳到末尾取到长度，再 `seek` 回原位置，以兼容已经读过一部分的文件对象。最后返回 `max(0, total_length - current_position)`，也就是剩余长度；如果 `tell()` 抛 OSError（stdin 这类特殊文件），就把当前位置当成总长度，于是返回 0，交给 chunked 编码处理。",
+        "evidence": [
+          {
+            "file": "src/requests/utils.py",
+            "startLine": 160,
+            "endLine": 184,
+            "symbol": "super_len"
+          },
+          {
+            "file": "src/requests/utils.py",
+            "startLine": 201,
+            "endLine": 228,
+            "symbol": "current_position"
+          }
+        ],
+        "mustMention": [
+          "super_len 在 utils.py 中",
+          "长度来源是 __len__、len、fileno",
+          "无 len 时 seek 到末尾再回退",
+          "返回总长减当前位置"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q06",
+      "question": "`verify` 与 `cert` 这两个参数最终是怎么变成 urllib3 连接池参数的？相关函数分别实现在哪里？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "分三处实现。`HTTPAdapter._urllib3_request_context`（src/requests/adapters.py 85-119 行）把 `verify` 翻译成 urllib3 的 `cert_reqs`：为 `False` 时给 `CERT_NONE`，为 `True` 时给 `CERT_REQUIRED`，是字符串则按它是不是目录分成 `ca_certs` 或 `ca_cert_dir`；`cert` 则被翻译成 `cert_file` 与 `key_file`，同时返回 scheme、hostname、port 这些 host 参数。`HTTPAdapter.build_connection_pool_key_attributes`（403-453 行）默认原样返回这份结果，专门留给子类覆盖。`HTTPAdapter.get_connection_with_tls_context`（455-510 行）据此从 `poolmanager` 或 `proxy_manager` 里取连接池，代理地址缺主机名时抛 `InvalidProxyURL`。真正落到连接对象上的是 `HTTPAdapter.cert_verify`（307-363 行）：https 且 `verify` 为真时会用 `DEFAULT_CA_BUNDLE_PATH` 或用户指定的路径，找不到就抛 `OSError`；`verify` 为假时把 `cert_reqs` 设成 `CERT_NONE` 并清空 `ca_certs`。另外 `HTTPAdapter.send` 调 `conn.urlopen` 时传的是 `redirect=False`，所以重定向留给 requests 自己处理。",
+        "evidence": [
+          {
+            "file": "src/requests/adapters.py",
+            "startLine": 85,
+            "endLine": 119,
+            "symbol": "_urllib3_request_context"
+          },
+          {
+            "file": "src/requests/adapters.py",
+            "startLine": 307,
+            "endLine": 346,
+            "symbol": "cert_verify"
+          },
+          {
+            "file": "src/requests/adapters.py",
+            "startLine": 455,
+            "endLine": 510,
+            "symbol": "get_connection_with_tls_context"
+          }
+        ],
+        "mustMention": [
+          "verify 决定证书校验级别",
+          "字符串 verify 区分 ca_certs 与目录",
+          "找不到 CA bundle 抛 OSError",
+          "urlopen 传 redirect=False"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q07",
+      "question": "session 级设置（headers、params、auth、hooks）和单次请求的设置是怎么合并的？对应的合并函数在哪？为什么 hooks 需要单独的合并函数？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "合并逻辑都在 `src/requests/sessions.py`。`merge_setting`（76-105 行）是通用合并：session 侧为 None 就用 request 侧，request 侧为 None 就用 session 侧；两边都不是 Mapping 时（例如 `verify` 这种标量）直接以 request 侧为准；两边都是字典时先用 session 侧构造 `OrderedDict`，再用 request 侧覆盖，最后把值为 None 的键删掉。`merge_hooks`（108-124 行）之所以单独写一个函数，是因为要防止 `{'response': []}` 这种空列表把整个 session 的 hooks 冲掉：只要有一边是 None，或者它的 `response` 列表为空，就直接返回另一边，否则再交给 `merge_setting`。`Session.prepare_request` 就是用它们分别合并 headers（用 `CaseInsensitiveDict`）、params、auth、cookies 和 hooks，最后交给 `PreparedRequest.prepare`。",
+        "evidence": [
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 76,
+            "endLine": 105,
+            "symbol": "merge_setting"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 108,
+            "endLine": 124,
+            "symbol": "merge_hooks"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 540,
+            "endLine": 554,
+            "symbol": "merge_setting"
+          }
+        ],
+        "mustMention": [
+          "merge_setting 在 sessions.py 中",
+          "标量设置以 request 侧为准",
+          "合并后删除值为 None 的键",
+          "merge_hooks 防止空列表覆盖 hooks"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q08",
+      "question": "`requests` 的异常体系有什么命名和继承约定？`Timeout`、`ConnectTimeout`、`ReadTimeout`、`ConnectionError` 之间是什么关系，为什么这么设计？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "全部定义在 `src/requests/exceptions.py`。约定是：所有异常都继承 `RequestException`，而 `RequestException` 又继承 `IOError`，所以一句 `except requests.exceptions.RequestException` 就能兜住全部错误；HTTP 状态类错误用 `HTTPError`，由 `Response.raise_for_status` 在 4xx、5xx 时抛出；连接类错误用 `ConnectionError`，`ProxyError` 和 `SSLError` 是它的子类。超时的继承关系最特别：`Timeout` 继承 `RequestException`，`ConnectTimeout` 同时继承 `ConnectionError` 和 `Timeout`，而 `ReadTimeout` 只继承 `Timeout`。因此 `except Timeout` 能同时抓住连接超时和读超时，但 `except ConnectionError` 抓不到读超时，因为读超时并不是连接建立阶段失败。另外 `MissingSchema`、`InvalidSchema`、`InvalidURL` 这些还同时继承 `ValueError`，方便把 URL 错误按普通值错误处理。",
+        "evidence": [
+          {
+            "file": "src/requests/exceptions.py",
+            "startLine": 20,
+            "endLine": 36,
+            "symbol": "RequestException"
+          },
+          {
+            "file": "src/requests/exceptions.py",
+            "startLine": 66,
+            "endLine": 100,
+            "symbol": "ConnectTimeout"
+          },
+          {
+            "file": "src/requests/exceptions.py",
+            "startLine": 110,
+            "endLine": 127,
+            "symbol": "InvalidSchema"
+          }
+        ],
+        "mustMention": [
+          "RequestException 继承 IOError",
+          "ConnectTimeout 兼有连接错误与超时身份",
+          "ReadTimeout 不是连接错误",
+          "InvalidSchema 同时继承 ValueError"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q09",
+      "question": "`requests` 源码在命名和模块组织上有哪些约定？哪些东西被当成内部实现、不对外承诺？",
+      "category": "convention",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "约定分三层。一是用单下划线前缀标记模块内部实现，例如 `src/requests/auth.py` 的 `_basic_auth_str`、`src/requests/adapters.py` 的 `_urllib3_request_context`、`src/requests/utils.py` 的 `_validate_header_part`，这些名字不承诺向后兼容。二是把内部类型别名集中放在 `src/requests/_types.py`，该文件开头就写明这些类型不属于公开 API、外部代码不应依赖，所以其他模块统一写成 `from . import _types as _t` 再用 `_t.ParamsType` 引用。三是公开 API 只在 `src/requests/__init__.py` 里用 `__all__` 显式列出，包含 `Session`、`PreparedRequest`、`Request`、`Response`、`codes` 和各个快捷函数；`models.py`、`sessions.py`、`adapters.py`、`cookies.py` 的拆分只是源码组织方式，不等于对外接口。",
+        "evidence": [
+          {
+            "file": "src/requests/_types.py",
+            "startLine": 1,
+            "endLine": 10,
+            "symbol": "requests._types"
+          },
+          {
+            "file": "src/requests/auth.py",
+            "startLine": 34,
+            "endLine": 40,
+            "symbol": "_basic_auth_str"
+          },
+          {
+            "file": "src/requests/__init__.py",
+            "startLine": 171,
+            "endLine": 214,
+            "symbol": "__all__"
+          }
+        ],
+        "mustMention": [
+          "内部实现用下划线前缀",
+          "类型别名集中在 _types.py 且非公开 API",
+          "公开 API 由 __all__ 显式列出",
+          "模块拆分不等于公开接口"
+        ]
+      },
+      "humanScore": 4
+    },
+    {
+      "id": "q10",
+      "question": "用 `stream=True` 请求后，先访问 `r.content` 再调用 `r.iter_content()` 会报什么错、为什么？源码里是怎么处理的？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Response.content`（src/requests/models.py 1030-1047 行）第一次访问时会把整个响应体读进 `self._content`，并把 `_content_consumed` 置为 True；如果这时内容已经被消费掉而 `_content` 还是 False，就会抛 `RuntimeError`，提示内容已经被消费过。`iter_content`（912-973 行）里还有一个守卫：如果 `_content_consumed` 为真而 `_content` 仍是布尔值，就抛 `StreamConsumedError`，这个异常同时继承 `RequestException` 和 `TypeError`，表示流被读空却没有缓存下来，不能再迭代。另外 `Session.send` 末尾有 `if not stream: r.content`，所以默认的 `stream=False` 会在返回响应前就把内容全部读进内存，之后再调用 `iter_content` 只是对缓存切片，不会重新读 socket。",
+        "evidence": [
+          {
+            "file": "src/requests/models.py",
+            "startLine": 1030,
+            "endLine": 1047,
+            "symbol": "content"
+          },
+          {
+            "file": "src/requests/models.py",
+            "startLine": 933,
+            "endLine": 957,
+            "symbol": "StreamConsumedError"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 820,
+            "endLine": 829,
+            "symbol": "r.content"
+          }
+        ],
+        "mustMention": [
+          "content 首次访问会读完整个响应",
+          "重复迭代抛 StreamConsumedError",
+          "已消费未缓存时抛 RuntimeError",
+          "stream=False 时会预读 content"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q11",
+      "question": "POST 请求遇到 302 重定向时请求体去哪了？如果是 307/308 保留方法，源码又怎么处理请求体？什么情况下会抛 `UnrewindableBodyError`？",
+      "category": "debugging",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "在 `SessionRedirectMixin.resolve_redirects`（src/requests/sessions.py）里，只有 307 和 308 会保留原来的请求方法和请求体；其余状态码会删掉 `Content-Length`、`Content-Type`、`Transfer-Encoding` 这三个头，并把 `prepared_request.body` 直接置为 None。所以 POST 遇到 302 时，`rebuild_method` 会把方法改成 GET，请求体随之被丢弃，这就是重定向后服务端收不到 body 的根因。307 和 308 下 body 被保留，如果它是文件对象，源码靠 `PreparedRequest.prepare_body` 记下的 `_body_position` 判断能否回卷：`rewindable` 要求 `_body_position` 不是 None，且请求带 `Content-Length` 或 `Transfer-Encoding`，满足才调用 `rewind_body` 把文件指针拨回原位；而 `rewind_body`（src/requests/utils.py 1139-1155 行）在对象没有 `seek` 或位置不是整数时抛 `UnrewindableBodyError`。",
+        "evidence": [
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 247,
+            "endLine": 258,
+            "symbol": "purged_headers"
+          },
+          {
+            "file": "src/requests/sessions.py",
+            "startLine": 275,
+            "endLine": 284,
+            "symbol": "rewindable"
+          },
+          {
+            "file": "src/requests/utils.py",
+            "startLine": 1139,
+            "endLine": 1155,
+            "symbol": "rewind_body"
+          }
+        ],
+        "mustMention": [
+          "只有 307/308 保留方法与 body",
+          "其他状态码删 Content-Length 并清空 body",
+          "靠 _body_position 回卷文件指针",
+          "不可回卷时抛 UnrewindableBodyError"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q12",
+      "question": "`r.json()` 在响应体不是合法 JSON 时抛出的到底是什么异常？为什么带 UTF-8 BOM 或 UTF-16 编码的 JSON 也能被正确解析？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "`Response.json`（src/requests/models.py 1087-1120 行）抛的是 `requests.exceptions.JSONDecodeError`，它同时继承 `InvalidJSONError`（再往上是 `RequestException`）和标准库的 `json.JSONDecodeError`，所以既可以当 requests 异常捕获，也可以当普通 JSON 异常捕获。解析分两步：只要 `self.encoding` 为空且内容长度大于 3，就先用 `guess_json_utf`（src/requests/utils.py 1008-1037 行）猜编码，它检查 BOM（UTF-8、UTF-16、UTF-32），并靠前 4 个字节里 NUL 字节的个数和位置区分 utf-8、utf-16-le、utf-16-be、utf-32-le、utf-32-be，猜中就按该编码解码后交给 `complexjson.loads`；若解码抛出 `UnicodeDecodeError` 说明猜错了编码，就退回用 `self.text` 再解析一次。所以 JSON 文件其实是 UTF-16 这类问题通常能被自动处理，只有真正解析失败时才抛 `JSONDecodeError`。",
+        "evidence": [
+          {
+            "file": "src/requests/models.py",
+            "startLine": 1087,
+            "endLine": 1120,
+            "symbol": "guess_json_utf"
+          },
+          {
+            "file": "src/requests/utils.py",
+            "startLine": 1008,
+            "endLine": 1038,
+            "symbol": "guess_json_utf"
+          },
+          {
+            "file": "src/requests/exceptions.py",
+            "startLine": 42,
+            "endLine": 63,
+            "symbol": "JSONDecodeError"
+          }
+        ],
+        "mustMention": [
+          "抛 requests 的 JSONDecodeError",
+          "它也继承标准库 JSONDecodeError",
+          "用 BOM 与 NUL 分布猜编码",
+          "猜错编码时退回用 self.text"
+        ]
+      },
+      "humanScore": 5
+    }
+  ]
+}

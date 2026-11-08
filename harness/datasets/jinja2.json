@@ -1,0 +1,261 @@
+{
+  "id": "jinja2-v1",
+  "repo": "jinja2",
+  "repoUrl": "https://github.com/pallets/jinja",
+  "language": "python",
+  "createdAt": "2026-11-08",
+  "questions": [
+    {
+      "id": "q01",
+      "question": "一个模板从源码字符串变成最终输出，中间经过哪几个阶段？`Environment.compile`、词法分析、语法分析、代码生成各自在哪个文件哪个方法里，最终的 Python 代码是怎么变成可执行的 `Template` 的？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "`Environment.compile`（src/jinja2/environment.py）是整条编译链的总入口。源码是字符串时先走 `_parse`，由 `Parser.parse`（src/jinja2/parser.py）把模板文本解析成 `nodes.Template` 抽象语法树；再走 `_generate`，由 `CodeGenerator.visit_Template`（src/jinja2/compiler.py）把 AST 翻译成一段 Python 源码字符串；最后 `_compile` 调内置 `compile()` 得到 code object。词法分析发生在 `_tokenize` 中：先让各扩展 `preprocess` 源码，再由 `Lexer`（src/jinja2/lexer.py）切词，产出的 token 流还要交给扩展的 `filter_stream` 过滤。`Template.from_code` 用 `exec(code, namespace)` 执行 code object，从命名空间取出 `root`、`blocks`、`name` 等符号挂到 `Template` 上。整条编译链只在模板首次加载时执行一次，之后命中缓存就直接复用编译结果。",
+        "evidence": [
+          { "file": "src/jinja2/environment.py", "startLine": 731, "endLine": 771, "symbol": "compile" },
+          { "file": "src/jinja2/compiler.py", "startLine": 829, "endLine": 880, "symbol": "visit_Template" },
+          { "file": "src/jinja2/environment.py", "startLine": 1216, "endLine": 1231, "symbol": "from_code" }
+        ],
+        "mustMention": [
+          "compile 先 parse 再 generate",
+          "词法分析由 Lexer 完成",
+          "visit_Template 生成 Python 源码",
+          "from_code 用 exec 执行代码"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q02",
+      "question": "Jinja 在编译期做了哪些优化？常量折叠是在哪一层实现的，为什么有时常量不能被折叠？`Environment.optimized` 这个开关影响到什么？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "优化分两层。第一层在 AST：`optimizer.optimize`（src/jinja2/optimizer.py）创建 `Optimizer` 并用 `generic_visit` 遍历整棵树，对 `nodes.Expr` 节点调用 `as_const`，成功就把它替换成 `Const.from_untrusted`，失败则保持原样，这就是常量折叠。第二层在代码生成：`CodeGenerator.visit_Output`（src/jinja2/compiler.py）把输出节点里能常量求值的部分在编译期算好，相邻常量合并成一组，运行时只 `yield` 一条常量字符串，省掉重复计算。不过当 `finalize` 需要运行时上下文（`pass_context` 之类）时，常量无法在编译期求值，就会被退回运行时求值。`Environment.optimized` 为假时，`CodeGenerator` 根本不会创建 `Optimizer`，这两层优化全部关闭。",
+        "evidence": [
+          { "file": "src/jinja2/optimizer.py", "startLine": 20, "endLine": 48, "symbol": "optimize" },
+          { "file": "src/jinja2/compiler.py", "startLine": 1503, "endLine": 1542, "symbol": "visit_Output" },
+          { "file": "src/jinja2/compiler.py", "startLine": 300, "endLine": 322, "symbol": "CodeGenerator" }
+        ],
+        "mustMention": [
+          "AST 级常量折叠靠 as_const",
+          "visit_Output 在编译期合并常量输出",
+          "finalize 需要运行时上下文时不能折叠",
+          "optimized 为假时不创建 Optimizer"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q03",
+      "question": "模板被编译出来的 Python 代码长什么样？根渲染函数、block 函数、`{% extends %}` 的父子模板衔接分别是怎么生成的，运行时又是怎么把这些片段拼成最终字符串的？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "编译产物是一个普通 Python 模块。`root(context, missing=missing)` 是根渲染函数，用 `yield` 逐段产出文本；每个 `{% block %}` 被提升成独立的 `block_<name>(context, ...)` 函数，末尾再生成 `blocks = {'name': block_name}` 字典，供模板继承时查找。存在 `{% extends %}` 时根函数尾部会执行 `parent_template.root_render_func(context)` 把父模板接在后面（异步模式下改成 `agen` 加 `async for`）。运行时 `Template.render`（src/jinja2/environment.py）先 `new_context` 建出 `Context`，再执行 `self.environment.concat(self.root_render_func(ctx))`，用类属性 `concat = \"\".join` 把生成器吐出的片段拼成最终字符串；异常则交给 `handle_exception` 处理。每个块的实现彼此独立，父子模板的同名块由此形成覆盖链，`super()` 就是沿这条链往上一层取。",
+        "evidence": [
+          { "file": "src/jinja2/compiler.py", "startLine": 870, "endLine": 895, "symbol": "root" },
+          { "file": "src/jinja2/compiler.py", "startLine": 916, "endLine": 949, "symbol": "blocks" },
+          { "file": "src/jinja2/environment.py", "startLine": 1285, "endLine": 1295, "symbol": "root_render_func" }
+        ],
+        "mustMention": [
+          "根函数名是 root 且用 yield 产出片段",
+          "每个 block 生成 block_<name> 函数",
+          "extends 用 root_render_func 衔接",
+          "render 用 environment.concat 拼接"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q04",
+      "question": "模板里写 `{{ name }}` 时，这个名字是怎么被解析成实际值的？编译期和运行期分别做了什么，变量找不到时为什么不会直接报错？",
+      "category": "architecture",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "变量名到实际值的解析，编译期和运行期各做一半。编译期 `CodeGenerator.visit_Name`（src/jinja2/compiler.py）先由 `idtracking` 判定这个名字是模板内局部变量还是外部变量；外部变量会生成 `undefined(name='x') if ref is missing else ref` 这样的三元表达式，把「可能不存在」这件事显式写进代码。运行期 `Context.resolve_or_missing`（src/jinja2/runtime.py）先查 `self.vars`（模板内 `set` 出来的），再查 `self.parent`（渲染参数与 globals 合并出的字典，由 `new_context` 构造），两处都没有就返回 `missing` 哨兵。`Context.resolve` 见到 `missing` 就返回 `environment.undefined(name=key)`，也就是一个 `Undefined` 对象而不是抛异常。",
+        "evidence": [
+          { "file": "src/jinja2/compiler.py", "startLine": 1637, "endLine": 1660, "symbol": "visit_Name" },
+          { "file": "src/jinja2/runtime.py", "startLine": 212, "endLine": 246, "symbol": "resolve_or_missing" },
+          { "file": "src/jinja2/runtime.py", "startLine": 93, "endLine": 119, "symbol": "new_context" }
+        ],
+        "mustMention": [
+          "visit_Name 生成 undefined 回退",
+          "先查 vars 再查 parent",
+          "parent 由 new_context 合并而成",
+          "找不到时返回 Undefined 而不是抛错"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q05",
+      "question": "自定义过滤器和测试是怎么注册进模板的？内置过滤器、测试的注册表在哪，`{{ x | myfilter }}` 这种调用在编译期和运行期分别在哪里被解析和执行？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "内置过滤器集中登记在 `FILTERS` 字典（src/jinja2/filters.py），内置测试集中登记在 `TESTS` 字典（src/jinja2/tests.py）。`Environment.__init__` 用 `.copy()` 把两份注册表拷进 `self.filters` 与 `self.tests`，所以每个环境互相独立，用户可以直接 `env.filters['myfilter'] = fn` 增删。调用发生在两处：编译期先由 `CodeGenerator.pull_dependencies` 为模板里用到的每个名字生成一个临时变量 `t_N = environment.filters['x']`（取不到时抛 `No filter named 'x' found.`），再由 `CodeGenerator._filter_test_common`（src/jinja2/compiler.py）生成 `t_N(...)` 调用；名字在环境里根本不存在时编译期就直接 `fail` 报错。运行期 `Environment.call_filter` 与 `call_test` 共用 `Environment._filter_test_common`，直接从字典取函数，并按 `_PassArg` 标记决定要不要注入 context。",
+        "evidence": [
+          { "file": "src/jinja2/filters.py", "startLine": 1818, "endLine": 1830, "symbol": "FILTERS" },
+          { "file": "src/jinja2/environment.py", "startLine": 498, "endLine": 520, "symbol": "_filter_test_common" },
+          { "file": "src/jinja2/compiler.py", "startLine": 1795, "endLine": 1831, "symbol": "_filter_test_common" }
+        ],
+        "mustMention": [
+          "内置过滤器在 filters.py 的 FILTERS 字典",
+          "内置测试在 tests.py 的 TESTS 字典",
+          "Environment 用 copy 拷出注册表",
+          "pull_dependencies 先绑定过滤器到临时变量"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q06",
+      "question": "异步渲染是怎么实现的？`enable_async` 打开后，`Template.render_async`、生成的根函数、以及 `auto_await`、`auto_aiter` 这些辅助函数各自负责什么？",
+      "category": "code-location",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "异步能力由 `Environment(enable_async=True)` 打开，实例上的 `self.is_async` 决定后续走哪条路。`Template.render_async`（src/jinja2/environment.py）在 `is_async` 为假时直接抛 `RuntimeError`，为真时把 `root_render_func` 当异步生成器用 `async for` 收集，再用 `environment.concat` 拼成字符串。生成的代码里，过滤器调用会被 `CodeGenerator._filter_test_common` 包成 `await auto_await(...)`；`auto_await`（src/jinja2/async_utils.py）先判断值的类型是不是常见基础类型，不是才用 `inspect.isawaitable` 决定是否 await，因此同步过滤器和异步过滤器可以用同一份代码。遍历模板数据则用 `auto_aiter`，它把同步可迭代对象包装成异步迭代器。",
+        "evidence": [
+          { "file": "src/jinja2/environment.py", "startLine": 1297, "endLine": 1318, "symbol": "render_async" },
+          { "file": "src/jinja2/async_utils.py", "startLine": 62, "endLine": 99, "symbol": "auto_await" },
+          { "file": "src/jinja2/compiler.py", "startLine": 896, "endLine": 913, "symbol": "root_render_func" }
+        ],
+        "mustMention": [
+          "非异步环境 render_async 抛错",
+          "异步模式用 async for 收集输出",
+          "过滤器调用包在 await auto_await 中",
+          "auto_aiter 把同步迭代包装成异步"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q07",
+      "question": "自动转义（autoescape）是怎么生效的？转义开关在哪判定、按文件名自动选择的辅助函数在哪、真正把值转义的那段代码在哪、`|safe` 又是怎么实现的？",
+      "category": "code-location",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "自动转义有三个落点。开关判定在 `nodes.EvalContext.__init__`（src/jinja2/nodes.py）：`environment.autoescape` 若是可调用对象就按模板名求值，否则直接取它的布尔值；`utils.select_autoescape`（src/jinja2/utils.py）就是官方提供的按扩展名判断的可调用对象，`.html`、`.xml` 开启，其余按默认值。真正执行转义发生在编译期，`CodeGenerator._output_child_pre`（src/jinja2/compiler.py）根据 `eval_ctx.autoescape` 决定写出 `escape(` 还是 `str(`。而 `|safe` 对应 `do_mark_safe`（src/jinja2/filters.py），把值包成 `Markup` 标记为安全，从而绕过转义。是否转义在生成代码时就已固化，所以同一个模板在不同环境配置下渲染出的结果并不相同。",
+        "evidence": [
+          { "file": "src/jinja2/nodes.py", "startLine": 71, "endLine": 92, "symbol": "EvalContext" },
+          { "file": "src/jinja2/compiler.py", "startLine": 1476, "endLine": 1491, "symbol": "_output_child_pre" },
+          { "file": "src/jinja2/filters.py", "startLine": 1373, "endLine": 1382, "symbol": "do_mark_safe" }
+        ],
+        "mustMention": [
+          "EvalContext 判定 autoescape 开关",
+          "select_autoescape 按扩展名判断",
+          "编译器写出 escape( 或 str(",
+          "do_mark_safe 返回 Markup"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q08",
+      "question": "`nodes.py` 里的 AST 节点和 `compiler.py` 里的代码生成器之间有什么命名与结构约定？新增一个节点类型时需要遵循哪些规则？",
+      "category": "convention",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "节点库有一套统一约定。所有 AST 节点都继承 `nodes.Node`，用类属性 `fields` 声明按位置传入的字段、用 `attributes` 声明按关键字传入的属性，默认只有 `lineno` 与 `environment` 两项；`NodeType` 元类（src/jinja2/nodes.py）负责在建类时把父类的 `fields` 与 `attributes` 合并进子类，并断言禁止多重继承和字段重名。遍历约定是 `visit_<节点类名>`：`NodeVisitor.get_visitor`（src/jinja2/visitor.py）按 `visit_` 加类名查找处理函数，找不到就回退 `generic_visit`。因此 `CodeGenerator` 里每种节点都对应一个 `visit_XXX` 方法，新增节点类型时必须补上同名方法，否则只能走通用逻辑。",
+        "evidence": [
+          { "file": "src/jinja2/nodes.py", "startLine": 54, "endLine": 68, "symbol": "NodeType" },
+          { "file": "src/jinja2/nodes.py", "startLine": 105, "endLine": 125, "symbol": "fields" },
+          { "file": "src/jinja2/visitor.py", "startLine": 16, "endLine": 47, "symbol": "get_visitor" }
+        ],
+        "mustMention": [
+          "fields 声明位置参数属性",
+          "NodeType 元类合并父类字段",
+          "访问器命名约定是 visit_ 加类名",
+          "找不到访问器时回退 generic_visit"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q09",
+      "question": "一个过滤器想拿到当前的模板上下文，或者拿到 `Environment` 本身，库约定怎么写？`pass_context`、`pass_eval_context`、`pass_environment` 这三个装饰器是怎么实现的，调用方又是怎么知道该给它传什么参数的？",
+      "category": "convention",
+      "difficulty": "easy",
+      "reference": {
+        "answer": "约定是给函数、过滤器和测试统一挂三个装饰器之一：`pass_context`、`pass_eval_context`、`pass_environment`（src/jinja2/utils.py）。它们的实现不改函数签名，只是给函数对象挂一个 `jinja_pass_arg` 属性，值取自内部枚举 `_PassArg` 的 context、eval_context、environment 三项；`_PassArg.from_obj` 负责读出这个标记，所以同一个函数在编译期和运行期能被一致地识别。调用方据此把参数插到第一个位置：编译器在 `CodeGenerator._filter_test_common` 里按映射写 `context,`、`context.eval_ctx,` 或 `environment,`，运行时 `Environment._filter_test_common` 与 `Context.call` 也按同样的映射注入，其中 `Context.call` 还会在调用前把 `_loop_vars`、`_block_vars` 这类内部参数清掉。",
+        "evidence": [
+          { "file": "src/jinja2/utils.py", "startLine": 38, "endLine": 52, "symbol": "pass_context" },
+          { "file": "src/jinja2/utils.py", "startLine": 85, "endLine": 95, "symbol": "_PassArg" },
+          { "file": "src/jinja2/compiler.py", "startLine": 1815, "endLine": 1824, "symbol": "pass_arg" }
+        ],
+        "mustMention": [
+          "装饰器通过 jinja_pass_arg 属性标记",
+          "_PassArg 枚举区分三种上下文",
+          "_PassArg.from_obj 读取该标记",
+          "调用方把上下文插到第一个参数"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q10",
+      "question": "模板里引用了一个不存在的变量会怎样？默认的 `Undefined` 和 `StrictUndefined` 在打印、布尔判断、运算、迭代上的行为差别在哪里，源码里是怎么实现的？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "默认 `Undefined`（src/jinja2/runtime.py）是宽容型的：`__str__` 返回空字符串，所以 `{{ missing }}` 渲染出来是空的；`__bool__` 返回 False，`__len__` 为 0，`__iter__` 不产出任何元素，`{% if missing %}` 也不会进入分支。但 `__add__`、`__call__`、`__getitem__`、`__int__` 等运算符被统一指派成 `_fail_with_undefined_error`，一旦拿它参与运算或调用就抛 `UndefinedError`；属性访问走 `__getattr__`，同样直接失败，错误信息由 `_undefined_message` 拼出。换成 `StrictUndefined` 后，`__iter__`、`__str__`、`__len__`、`__eq__`、`__bool__` 全被重定义为 `_fail_with_undefined_error`，连打印都会抛错，只能先用 `defined` 测试判断。另外 `ChainableUndefined` 与 `DebugUndefined` 提供了另外两种折中行为：一个允许继续取属性，一个把名字打印出来便于排查。",
+        "evidence": [
+          { "file": "src/jinja2/runtime.py", "startLine": 872, "endLine": 909, "symbol": "_fail_with_undefined_error" },
+          { "file": "src/jinja2/runtime.py", "startLine": 818, "endLine": 860, "symbol": "_undefined_message" },
+          { "file": "src/jinja2/runtime.py", "startLine": 1039, "endLine": 1062, "symbol": "StrictUndefined" }
+        ],
+        "mustMention": [
+          "Undefined 的 __str__ 返回空串",
+          "布尔为 False、长度为 0、迭代为空",
+          "参与运算或调用会抛 UndefinedError",
+          "StrictUndefined 连打印都会抛错"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q11",
+      "question": "改完模板文件后页面还是旧内容，源码里是怎么缓存和判定模板是否过期的？`auto_reload` 和字节码缓存（bytecode cache）各起什么作用？",
+      "category": "debugging",
+      "difficulty": "medium",
+      "reference": {
+        "answer": "模板不更新的问题出在两层缓存。第一层是 `Environment._load_template`（src/jinja2/environment.py）：它用 `(weakref.ref(self.loader), name)` 作 key，把 `Template` 缓存在 `self.cache`（一个 `LRUCache`）里；`auto_reload` 打开时，除了命中缓存还要看 `template.is_up_to_date`，它转调 loader 在 `get_source` 里一起返回的 `uptodate` 闭包（文件 mtime 之类），返回 False 才重新走一遍加载与编译。第二层是字节码缓存：`BytecodeCache.get_bucket` 按模板名与文件名算 sha1 作 key、按源码内容算 sha1 作 checksum，`Bucket.load_bytecode`（src/jinja2/bccache.py）比对 checksum，不一致就 `reset()` 丢弃旧字节码，避免继续用旧代码。两层缓存都在模板首次加载时写入，一旦命中旧缓存就不会重新读取源码，这正是改动不生效的直接原因。",
+        "evidence": [
+          { "file": "src/jinja2/environment.py", "startLine": 957, "endLine": 979, "symbol": "_load_template" },
+          { "file": "src/jinja2/environment.py", "startLine": 1491, "endLine": 1497, "symbol": "is_up_to_date" },
+          { "file": "src/jinja2/bccache.py", "startLine": 65, "endLine": 82, "symbol": "load_bytecode" }
+        ],
+        "mustMention": [
+          "模板缓存 key 是 loader 弱引用加模板名",
+          "auto_reload 依赖 is_up_to_date",
+          "字节码缓存用源码 sha1 checksum 判断过期",
+          "checksum 不一致时 Bucket 会 reset"
+        ]
+      },
+      "humanScore": 5
+    },
+    {
+      "id": "q12",
+      "question": "在 `SandboxedEnvironment` 里访问模板对象的私有属性时会发生什么？源码里是怎么判定属性是否安全、怎么拦截不安全的访问的，`str.format` 这种容易被绕过的入口又是怎么处理的？",
+      "category": "debugging",
+      "difficulty": "hard",
+      "reference": {
+        "answer": "沙箱靠两层判断。`SandboxedEnvironment.is_safe_attribute`（src/jinja2/sandbox.py）默认拒绝一切下划线开头的属性，并调用 `is_internal_attribute` 排除 `mro`、双下划线属性以及 code、frame、生成器这类内部对象。属性读取走 `SandboxedEnvironment.getattr`：拿到属性后先用 `wrap_str_format` 判断是不是 `str.format`，是就换成沙箱版 formatter，否则调 `is_safe_attribute`；不安全的属性不会当场报错，而是返回 `unsafe_undefined` 构造的 `Undefined`，其异常类型被设成 `SecurityError`，真正用到该值时才抛。另外函数若被 `@unsafe` 装饰或带 `alters_data` 属性，`is_safe_callable` 会判定它不可调用。",
+        "evidence": [
+          { "file": "src/jinja2/sandbox.py", "startLine": 248, "endLine": 267, "symbol": "is_safe_attribute" },
+          { "file": "src/jinja2/sandbox.py", "startLine": 115, "endLine": 149, "symbol": "is_internal_attribute" },
+          { "file": "src/jinja2/sandbox.py", "startLine": 314, "endLine": 342, "symbol": "unsafe_undefined" }
+        ],
+        "mustMention": [
+          "is_safe_attribute 拒绝下划线属性",
+          "is_internal_attribute 排除内部属性",
+          "不安全属性返回 SecurityError",
+          "str.format 被换成沙箱 formatter"
+        ]
+      },
+      "humanScore": 5
+    }
+  ]
+}
