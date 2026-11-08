@@ -2,8 +2,12 @@ import { Fragment, type ReactNode, useMemo } from "react";
 
 // 只渲染回答里真正出现过的语法子集，并自研解析以免给静态站点再背一份 markdown 依赖。
 
-type ListItem = { indent: number; text: string; ordered: boolean };
-type ListNode = { text: string; ordered: boolean; children: ListNode[] };
+type Segment =
+  | { kind: "text"; text: string }
+  | { kind: "code"; lang: string; code: string };
+
+type ListItem = { indent: number; segments: Segment[]; ordered: boolean };
+type ListNode = { segments: Segment[]; ordered: boolean; children: ListNode[] };
 
 type Block =
   | { kind: "heading"; level: number; text: string }
@@ -41,7 +45,11 @@ function buildListTree(items: ListItem[]): ListNode[] {
   const roots: ListNode[] = [];
   const stack: { indent: number; node: ListNode }[] = [];
   for (const item of items) {
-    const node: ListNode = { text: item.text, ordered: item.ordered, children: [] };
+    const node: ListNode = {
+      segments: item.segments,
+      ordered: item.ordered,
+      children: [],
+    };
     while (stack.length && stack[stack.length - 1].indent >= item.indent) {
       stack.pop();
     }
@@ -132,23 +140,53 @@ function parseBlocks(source: string): Block[] {
 
     if (isListLine(line)) {
       const items: ListItem[] = [];
-      while (index < lines.length && isListLine(lines[index])) {
+      while (index < lines.length) {
+        if (!isListLine(lines[index])) {
+          // 条目之间可以隔空行：下一个非空行还是列表项就还是同一个列表，
+          // 否则每个条目都会被拆成独立列表，序号全部从 1 开始。
+          let probe = index;
+          while (probe < lines.length && blank(lines[probe])) probe += 1;
+          if (probe < lines.length && isListLine(lines[probe])) {
+            index = probe;
+            continue;
+          }
+          break;
+        }
         const matched = lines[index].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/)!;
         const indent = Math.floor(matched[1].replace(/\t/g, "  ").length / 2);
-        items.push({
-          indent,
-          text: matched[3],
-          ordered: /\d/.test(matched[2]),
-        });
+        const segments: Segment[] = [{ kind: "text", text: matched[3] }];
+        const appendText = (value: string) => {
+          const last = segments[segments.length - 1];
+          if (last.kind === "text") last.text += value;
+          else segments.push({ kind: "text", text: value });
+        };
+        items.push({ indent, segments, ordered: /\d/.test(matched[2]) });
         index += 1;
         // 缩进的续行并入上一项
         while (
           index < lines.length &&
           !blank(lines[index]) &&
-          !isListLine(lines[index]) &&
-          /^\s{2,}/.test(lines[index])
+          !isListLine(lines[index])
         ) {
-          items[items.length - 1].text += `\n${lines[index].trim()}`;
+          // 条目里的代码围栏要原样保留，不能被压成一行行内代码
+          const inner = lines[index].match(/^\s*```(\S*)\s*$/);
+          if (inner) {
+            const body: string[] = [];
+            index += 1;
+            while (index < lines.length && !/^\s*```\s*$/.test(lines[index])) {
+              body.push(lines[index].trim());
+              index += 1;
+            }
+            index += 1;
+            segments.push({
+              kind: "code",
+              lang: inner[1],
+              code: body.join("\n"),
+            });
+            continue;
+          }
+          if (!/^\s{2,}/.test(lines[index])) break;
+          appendText(`\n${lines[index].trim()}`);
           index += 1;
         }
       }
@@ -253,27 +291,67 @@ function renderInline(text: string): ReactNode[] {
   return nodes;
 }
 
-function renderNodes(nodes: ListNode[], depth: number): ReactNode {
-  const Tag = nodes[0]?.ordered ? "ol" : "ul";
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
   return (
-    <Tag
-      className={
-        Tag === "ol"
-          ? "my-1.5 list-decimal space-y-1 pl-5 marker:text-muted-foreground"
-          : "my-1.5 list-disc space-y-1 pl-5 marker:text-muted-foreground"
-      }
-    >
-      {nodes.map((node, index) => (
-        <li key={index} className="leading-7">
-          <Fragment>{renderInline(node.text)}</Fragment>
-          {node.children.length > 0 && (
-            <div className="mt-1 border-l border-border pl-3">
-              {renderNodes(node.children, depth + 1)}
-            </div>
-          )}
-        </li>
-      ))}
-    </Tag>
+    <div className="my-2 overflow-hidden rounded-md border border-border/70 bg-secondary/50">
+      {lang && (
+        <div className="border-b border-border/60 px-3 py-1 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
+          {lang}
+        </div>
+      )}
+      <pre className="overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function renderSegments(segments: Segment[]): ReactNode[] {
+  return segments.map((segment, index) =>
+    segment.kind === "code" ? (
+      <CodeBlock key={index} lang={segment.lang} code={segment.code} />
+    ) : (
+      <Fragment key={index}>{renderInline(segment.text)}</Fragment>
+    ),
+  );
+}
+
+function renderNodes(nodes: ListNode[]): ReactNode {
+  // 同一层里混着有序和无序条目时按连续段拆开渲染，各自有各的标记。
+  const groups: { ordered: boolean; items: ListNode[] }[] = [];
+  for (const node of nodes) {
+    const last = groups[groups.length - 1];
+    if (last && last.ordered === node.ordered) last.items.push(node);
+    else groups.push({ ordered: node.ordered, items: [node] });
+  }
+
+  return (
+    <>
+      {groups.map((group, groupIndex) => {
+        const Tag = group.ordered ? "ol" : "ul";
+        return (
+          <Tag
+            key={groupIndex}
+            className={
+              group.ordered
+                ? "my-1.5 list-decimal space-y-1 pl-5 marker:text-muted-foreground"
+                : "my-1.5 list-disc space-y-1 pl-5 marker:text-muted-foreground"
+            }
+          >
+            {group.items.map((node, index) => (
+              <li key={index} className="leading-7">
+                {renderSegments(node.segments)}
+                {node.children.length > 0 && (
+                  <div className="mt-1 border-l border-border pl-3">
+                    {renderNodes(node.children)}
+                  </div>
+                )}
+              </li>
+            ))}
+          </Tag>
+        );
+      })}
+    </>
   );
 }
 
@@ -308,23 +386,9 @@ function renderBlock(block: Block, index: number): ReactNode {
       );
     }
     case "code":
-      return (
-        <div
-          key={index}
-          className="my-2 overflow-hidden rounded-md border border-border/70 bg-secondary/50"
-        >
-          {block.lang && (
-            <div className="border-b border-border/60 px-3 py-1 font-mono text-[10px] tracking-wide text-muted-foreground uppercase">
-              {block.lang}
-            </div>
-          )}
-          <pre className="overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
-            <code>{block.code}</code>
-          </pre>
-        </div>
-      );
+      return <CodeBlock key={index} lang={block.lang} code={block.code} />;
     case "list":
-      return <Fragment key={index}>{renderNodes(block.nodes, 0)}</Fragment>;
+      return <Fragment key={index}>{renderNodes(block.nodes)}</Fragment>;
     case "quote":
       return (
         <blockquote
