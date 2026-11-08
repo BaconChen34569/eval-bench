@@ -6,6 +6,7 @@ import { validateJudge } from "./judge-validation.ts";
 import { listModels } from "./llm.ts";
 import { discoverProfiles, resolveProfile, type ReadyProfile } from "./profiles.ts";
 import { LADDER, runLadder } from "./ladder.ts";
+import { runComparison } from "./compare.ts";
 import { readBaseline } from "./baseline.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
 import type {
@@ -79,11 +80,15 @@ function usage(): never {
   node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案]
   node --experimental-strip-types src/cli.ts report <run.json...> [--out report.json]
   node --experimental-strip-types src/cli.ts models [--model 档案]
+  node --experimental-strip-types src/cli.ts compare <dataset.json> <repoRoot> [--out comparison.json] [--report 旧报告.json] [--report-out 新报告.json] [--agents a,b] [--judges a,b] [--step v7]
 
 可用策略: ${Object.keys(STRATEGIES).join(", ")}
 
 模型档案在 harness/.env 里按前缀分组配置（如 LLM_ / QWEN_ / GLM_），
---model 指定被测模型，--judge-model 指定打分模型，不给就用 .env 里的默认档案。`,
+--model 指定被测模型，--judge-model 指定打分模型，不给就用 .env 里的默认档案。
+
+compare 命令跑多模型对比：所有被测模型用同一份配置，每把尺子都量一遍。
+--agents / --judges 用逗号分隔档案 id，--judges 的第一个是主尺子。`,
   );
   process.exit(1);
 }
@@ -401,11 +406,22 @@ async function main(): Promise<void> {
     const [datasetPath, repoRoot, strategyId] = args;
     if (!datasetPath || !repoRoot || !strategyId) usage();
 
-    const strategy = STRATEGIES[strategyId];
+    // --step 直接复用阶梯某一轮的完整配置（切分 + 检索 + 提示词），
+    // 这样多模型对比跑的就是同一套配置，能和阶梯那一轮的数字直接对照。
+    const stepId = flagValue(args, "--step");
+    const step = stepId ? LADDER.find((item) => item.id === stepId) : undefined;
+    if (stepId && !step) {
+      console.error(`阶梯里没有 ${stepId} 这一轮`);
+      process.exit(1);
+    }
+
+    const strategy = step ? step.chunking : STRATEGIES[strategyId];
     if (!strategy) {
       console.error(`未知策略 ${strategyId}`);
       process.exit(1);
     }
+    const retrieval = step ? step.retrieval : DEFAULT_RETRIEVAL;
+    const promptVersion = step?.promptVersion;
 
     const outputPath =
       flagValue(args, "--out") ?? join(process.cwd(), "out", "run.json");
@@ -420,11 +436,12 @@ async function main(): Promise<void> {
       dataset,
       repoRoot,
       chunking: strategy,
-      retrieval: DEFAULT_RETRIEVAL,
+      retrieval,
       llm,
       judgeLlm,
       successThreshold: 4,
       runId: `${strategy.id}-${Date.now()}`,
+      promptVersion,
       limit,
       onProgress: (done, total, message) =>
         console.log(`(${done}/${total}) ${message}`),
@@ -434,6 +451,8 @@ async function main(): Promise<void> {
 
     console.log("\n=== 运行摘要 ===");
     console.log(`策略          : ${strategy.label}`);
+    console.log(`检索配置      : top-${retrieval.topK} / ${retrieval.rerankMode ?? "none"} / 展开=${retrieval.queryExpansion ?? false}`);
+    console.log(`提示词版本    : ${promptVersion ?? "base"}`);
     console.log(`被测模型      : ${agent.label}（${run.model}）`);
     console.log(`打分模型      : ${judge.label}（${run.judgeModel}）`);
     console.log(`成功率(>=4分) : ${(run.summary.successRate * 100).toFixed(1)}%`);
@@ -476,6 +495,133 @@ async function main(): Promise<void> {
     await writeJson(outputPath, report);
     console.log(`报告已写入 ${outputPath}`);
     console.log(`已合并 ${runs.length} 次运行记录`);
+    return;
+  }
+
+  if (command === "compare") {
+    const [datasetPath, repoRoot] = args;
+    if (!datasetPath || !repoRoot) usage();
+
+    const outputPath =
+      flagValue(args, "--out") ?? join(process.cwd(), "out", "comparison.json");
+    const reportPath = flagValue(args, "--report");
+    const reportOutPath = flagValue(args, "--report-out");
+    const limit = Number(flagValue(args, "--limit") ?? "0") || undefined;
+
+    // 默认用阶梯的最后一轮：多模型对比要和已发布的数字同配置，
+    // 换一份配置就没有对照的意义了。
+    const stepId = flagValue(args, "--step");
+    const step = stepId
+      ? LADDER.find((item) => item.id === stepId)
+      : LADDER[LADDER.length - 1];
+    if (!step) {
+      console.error(`阶梯里没有 ${stepId} 这一轮`);
+      process.exit(1);
+    }
+
+    const dataset = await readDataset(datasetPath);
+
+    const ready = discoverProfiles(process.env)
+      .filter((profile) => profile.config && profile.missing.length === 0)
+      .map((profile) => profile as ReadyProfile);
+    if (ready.length === 0) {
+      console.error("harness/.env 里没有配置完整的模型档案");
+      process.exit(1);
+    }
+
+    const pick = (flag: string | undefined, what: string): ReadyProfile[] => {
+      if (!flag) return ready;
+      const ids = flag
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      return ids.map((id) => {
+        const match = ready.find(
+          (profile) => profile.id.toLowerCase() === id.toLowerCase(),
+        );
+        if (!match) {
+          throw new Error(
+            `没有名为 ${id} 的${what}档案。可用的：${ready
+              .map((profile) => profile.id)
+              .join(" / ")}`,
+          );
+        }
+        return match;
+      });
+    };
+
+    const agents = pick(flagValue(args, "--agents"), "被测模型");
+    const judges = pick(flagValue(args, "--judges"), "打分模型");
+    const primary = judges[0];
+
+    let baseReport: ExperimentReport | undefined;
+    let reuseRuns: EvalRun[] = [];
+    if (reportPath) {
+      baseReport = JSON.parse(
+        await readFile(reportPath, "utf8"),
+      ) as ExperimentReport;
+      reuseRuns = [...(baseReport.runs ?? []), ...(baseReport.ladderRuns ?? [])];
+    }
+
+    console.log(
+      `多模型对比：${agents.length} 个被测模型 × ${judges.length} 把尺子` +
+        `（主尺子 ${primary.label} / ${primary.config.model}）`,
+    );
+    console.log(
+      `配置：${step.chunking.label}，top-${step.retrieval.topK}，` +
+        `${step.retrieval.rerankMode ?? "none"}，提示词 ${step.promptVersion}`,
+    );
+
+    const comparison = await runComparison({
+      dataset,
+      repoRoot,
+      agents,
+      judges,
+      chunking: step.chunking,
+      retrieval: step.retrieval,
+      promptVersion: step.promptVersion ?? "base",
+      successThreshold: 4,
+      reuseRuns,
+      limit,
+      onProgress: (message) => console.log(`  ${message}`),
+    });
+
+    console.log("\n=== 多模型对比 ===");
+    for (const row of comparison.rows) {
+      const cells = row.cells
+        .map(
+          (cell) =>
+            `${cell.judgeProfileLabel} ${(cell.successRate * 100).toFixed(1)}%`,
+        )
+        .join(" / ");
+      console.log(
+        `  ${row.agentProfileLabel.padEnd(6)} 平均 ${(row.avgSuccessRate * 100).toFixed(1)}%` +
+          `  (${cells})  成本 ¥${row.totalCost.toFixed(4)}` +
+          `${row.reused ? "  [复用已有运行]" : ""}`,
+      );
+    }
+    for (const item of comparison.agreementMatrix) {
+      console.log(
+        `  尺子一致率 ${item.judgeA} ↔ ${item.judgeB}：` +
+          `${(item.agreement * 100).toFixed(1)}%（${item.sampled} 题，翻转 ${item.flips} 题）`,
+      );
+    }
+    for (const item of comparison.selfPreference) {
+      console.log(
+        `  自评偏袒 ${item.judgeProfileLabel}：本家 ${item.ownAvgScore.toFixed(2)}` +
+          ` vs 他家 ${item.otherAvgScore.toFixed(2)}，差 ${item.gap.toFixed(2)}`,
+      );
+    }
+
+    await writeJson(outputPath, comparison);
+    console.log(`\n对比结果已写入 ${outputPath}`);
+
+    if (baseReport) {
+      baseReport.modelComparison = comparison;
+      const target = reportOutPath ?? reportPath!;
+      await writeJson(target, baseReport);
+      console.log(`报告已写入 ${target}`);
+    }
     return;
   }
 

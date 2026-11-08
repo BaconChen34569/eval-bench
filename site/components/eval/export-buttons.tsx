@@ -3,6 +3,7 @@ import {
   DIFFICULTY_LABEL,
   FAILURE_LABEL,
   ladder,
+  modelComparison,
   questions,
   report,
   runs,
@@ -178,6 +179,93 @@ export function buildLadderCsv(): string {
     .join("\n");
 }
 
+/** 多模型对比：一个被测模型 × 一把尺子一行。 */
+export function buildModelComparisonCsv(): string {
+  if (!modelComparison) return "";
+  const header = [
+    "agentProfile",
+    "agentModel",
+    "agentProfileLabel",
+    "judgeProfile",
+    "judgeModel",
+    "successRate",
+    "avgJudgeScore",
+    "judgeCost",
+    "agentCost",
+    "totalCost",
+    "totalTokens",
+    "reused",
+    "avgSuccessRateAcrossJudges",
+    "avgEvidenceRecall",
+    "avgLatencyMs",
+    "p95LatencyMs",
+  ];
+
+  const rows = modelComparison.rows.flatMap((row) =>
+    row.cells.map((cell) => [
+      row.agentProfile,
+      row.agentModel,
+      row.agentProfileLabel,
+      cell.judgeProfile,
+      cell.judgeModel,
+      cell.successRate.toFixed(4),
+      cell.avgJudgeScore.toFixed(4),
+      cell.totalCost.toFixed(8),
+      row.agentCost.toFixed(8),
+      row.totalCost.toFixed(8),
+      row.totalTokens,
+      row.reused ? "true" : "false",
+      row.avgSuccessRate.toFixed(4),
+      row.avgEvidenceRecall.toFixed(4),
+      Math.round(row.avgLatencyMs),
+      row.p95LatencyMs,
+    ]),
+  );
+
+  return [header, ...rows]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+}
+
+/** 尺子之间的一致率：换一把尺子，排名会不会翻。 */
+export function buildJudgeAgreementCsv(): string {
+  if (!modelComparison) return "";
+  const header = [
+    "judgeA",
+    "judgeB",
+    "sampled",
+    "agreement",
+    "exactAgreement",
+    "flips",
+    "judgeASuccessRate",
+    "judgeBSuccessRate",
+  ];
+
+  const rows = modelComparison.agreementMatrix.map((item) => [
+    item.judgeA,
+    item.judgeB,
+    item.sampled,
+    item.agreement.toFixed(4),
+    item.exactAgreement.toFixed(4),
+    item.flips,
+    item.judgeASuccessRate.toFixed(4),
+    item.judgeBSuccessRate.toFixed(4),
+  ]);
+
+  const selfRows = modelComparison.selfPreference.map((item) => [
+    `${item.judgeModel} (self-preference)`,
+    item.ownModel,
+    1,
+    item.gap.toFixed(4),
+    item.ownAvgScore.toFixed(4),
+    item.ownRank,
+  ]);
+
+  return [header, ...rows, ...selfRows]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+}
+
 export function ExportButtons() {
   return (
     <div className="flex flex-wrap gap-2">
@@ -217,6 +305,36 @@ export function ExportButtons() {
         >
           下载迭代阶梯 CSV
         </Button>
+      )}
+      {modelComparison && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              download(
+                "eval-bench-models.csv",
+                "text/csv;charset=utf-8",
+                buildModelComparisonCsv(),
+              )
+            }
+          >
+            下载多模型对比 CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              download(
+                "eval-bench-judge-agreement.csv",
+                "text/csv;charset=utf-8",
+                buildJudgeAgreementCsv(),
+              )
+            }
+          >
+            下载尺子一致率 CSV
+          </Button>
+        </>
       )}
       <Button
         variant="outline"

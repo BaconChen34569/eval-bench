@@ -151,6 +151,8 @@ export interface CaseResult {
   };
   /** 本题的花费，包含 agent 与 judge 两次调用 */
   cost: number;
+  /** 其中 judge 那一次打分的花费，agent 的花费 = cost - judgeCost */
+  judgeCost?: number;
   /** 失败时的归因分类，供失败案例面板聚合 */
   failureKind?: "wrong-location" | "missing-detail" | "hallucination" | "timeout";
 }
@@ -200,6 +202,10 @@ export interface EvalRun {
    * 老记录没有这个字段，那时的 judge 就是被测模型本身。
    */
   judgeModel?: string;
+  /** 被测模型所属的档案 id，如 deepseek / qwen / glm。站上展示的名字靠它。 */
+  profile?: string;
+  /** 档案的展示名，如「通义千问」。 */
+  profileLabel?: string;
   startedAt: string;
   finishedAt: string;
   summary: RunSummary;
@@ -336,6 +342,118 @@ export interface BaselineSnapshot {
   }[];
 }
 
+/** 一个模型档案在某个 judge 手里拿到的成绩。 */
+export interface ModelJudgeCell {
+  judgeModel: string;
+  judgeProfile: string;
+  judgeProfileLabel: string;
+  /** 这把尺子量出来的成功率 */
+  successRate: number;
+  /** 这把尺子量出来的平均分 */
+  avgJudgeScore: number;
+  /** 这一轮打分花的钱 */
+  totalCost: number;
+}
+
+/** 多模型对比中的一行：一个被测模型在几把尺子下的成绩。 */
+export interface ModelComparisonRow {
+  agentModel: string;
+  agentProfile: string;
+  agentProfileLabel: string;
+  runId: string;
+  /** 是否复用了已有的运行记录 */
+  reused: boolean;
+  /** 每把尺子给这一行打的分 */
+  cells: ModelJudgeCell[];
+  /** 各尺子成功率的平均，作为排序用的主指标 */
+  avgSuccessRate: number;
+  avgJudgeScore: number;
+  avgEvidenceRecall: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  /** agent 生成答案花的钱 */
+  agentCost: number;
+  /** 全部打分花的钱 */
+  judgeCost: number;
+  totalCost: number;
+  totalTokens: number;
+  /** 失败归因分布 */
+  failureKinds: Record<string, number>;
+  /** 逐题得分：每把尺子给这道题打了几分，一致率就是拿这些算的 */
+  caseScores: { questionId: string; scores: Record<string, number> }[];
+}
+
+/** 两个 judge 在同一批答案上的一致程度。 */
+export interface JudgeAgreement {
+  agentModel: string;
+  judgeA: string;
+  judgeB: string;
+  sampled: number;
+  /** 分数相差不超过 1 分算一致 */
+  agreement: number;
+  /** 完全同分的比例 */
+  exactAgreement: number;
+  /** 成功判定被翻转的题数 */
+  flips: number;
+  judgeASuccessRate: number;
+  judgeBSuccessRate: number;
+}
+
+/** 两把尺子在全部答案上的一致程度（跨模型汇总）。 */
+export interface JudgePairAgreement {
+  judgeA: string;
+  judgeB: string;
+  sampled: number;
+  agreement: number;
+  exactAgreement: number;
+  flips: number;
+  /** 两把尺子各自判出的成功率，换尺子会让这个数变成多少 */
+  judgeASuccessRate: number;
+  judgeBSuccessRate: number;
+}
+
+/** 一把尺子给本家模型打的分，比给别家模型的平均高多少。 */
+export interface SelfPreference {
+  judgeModel: string;
+  judgeProfile: string;
+  judgeProfileLabel: string;
+  /** 本家的被测模型 */
+  ownModel: string;
+  ownAvgScore: number;
+  otherAvgScore: number;
+  /** 差值，大于 0 说明这把尺子偏袒自己那家 */
+  gap: number;
+  /** 本家模型在这把尺子下排第几，1 是最高分 */
+  ownRank: number;
+}
+
+/**
+ * 多模型对比：同一份配置下，不同被测模型的成绩。
+ *
+ * 回答的问题是「这把尺子能不能区分出模型的好坏」。
+ * 每个模型都被同一批尺子量一遍，排名才有意义；
+ * 再让第二把尺子量一次，看看换尺子会不会翻盘。
+ */
+export interface ModelComparison {
+  /** 对比用的配置，和阶梯最后一轮一致 */
+  chunking: ChunkingStrategy;
+  retrieval: RetrievalConfig;
+  promptVersion: PromptVersion;
+  successThreshold: number;
+  /** 打分模型，按列顺序排；第一把是主尺子 */
+  judges: { model: string; profile: string; label: string }[];
+  /** 主尺子：量所有被测模型的第一把尺子 */
+  primaryJudge: string;
+  rows: ModelComparisonRow[];
+  /** 每个被测模型：主尺子与其余尺子两两一致 */
+  agreements: JudgeAgreement[];
+  /** 尺子两两在全部答案上的一致率 */
+  agreementMatrix: JudgePairAgreement[];
+  /** 自评偏袒：本家模型是否被自己家的尺子打高了 */
+  selfPreference: SelfPreference[];
+  note: string;
+}
+
 /** 一个数据集上的多次运行，用于横向对比 */
 export interface ExperimentReport {
   datasetId: string;
@@ -356,4 +474,6 @@ export interface ExperimentReport {
   baseline?: BaselineSnapshot;
   /** 从基线版本到当前版本，代码层面改了什么 */
   changes?: string[];
+  /** 多模型对比，站点用它展示这把尺子有没有区分度 */
+  modelComparison?: ModelComparison;
 }

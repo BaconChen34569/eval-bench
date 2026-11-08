@@ -9,6 +9,7 @@ import {
   formatPercent,
   ladder,
   ladderRuns,
+  modelComparison,
   questions,
   report,
   runs,
@@ -22,6 +23,7 @@ import { DataView } from "@/components/eval/data-view";
 import { CostBreakdownPopover } from "@/components/eval/cost-breakdown";
 import { ExportButtons } from "@/components/eval/export-buttons";
 import { LadderSection } from "@/components/eval/ladder-section";
+import { ModelComparisonSection } from "@/components/eval/model-comparison-section";
 import { BaselineSection } from "@/components/eval/baseline-section";
 import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 import {
@@ -154,6 +156,9 @@ const SECTIONS = [
     : []),
   ...(ladder.length > 0
     ? [{ id: "ladder", label: "工具迭代史", short: "迭代史" }]
+    : []),
+  ...(modelComparison
+    ? [{ id: "models", label: "多模型对比", short: "多模型" }]
     : []),
   { id: "questions", label: "逐题检索台", short: "逐题" },
   { id: "failures", label: "失败归因", short: "失败" },
@@ -884,6 +889,30 @@ export default function App() {
           </section>
         )}
 
+        {modelComparison && (
+          <section id="models" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <SectionTitle id="models">多模型对比：这把尺子分不分得出好坏</SectionTitle>
+              <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+                前面所有数字都来自同一个模型。现在把被测对象换掉：
+                <span className="font-medium text-foreground">
+                  同一份配置、同一批题，换三个模型来答
+                </span>
+                ，再用同一批尺子给它们打分。
+                这一节要回答的不是「谁更强」——22 道题排出来的名次差一两位说明不了问题——
+                而是{" "}
+                <span className="font-medium text-foreground">
+                  这把尺子能不能区分出模型的好坏，以及尺子自己有多可信
+                </span>
+                ：每份答案都被几把尺子各量一遍，答案一个字都没改，
+                尺子之间的一致率和自评偏袒都能算出来。
+              </p>
+            </div>
+
+            <ModelComparisonSection />
+          </section>
+        )}
+
         <section id="questions" className="scroll-mt-16 mt-16 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <SectionTitle id="questions">逐题检索台</SectionTitle>
@@ -1022,6 +1051,44 @@ export default function App() {
                   </p>
                 </CardContent>
               </Card>
+              {modelComparison && modelComparison.agreementMatrix.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      还有第二道校验：换一把尺子
+                    </CardTitle>
+                    <CardDescription>
+                      自检只验证了「尺子对人工答案准不准」。
+                      多模型对比那一节补上了另一半：同一批答案换一把尺子重打，
+                      看两个尺子的判断差多少。
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3 text-sm leading-relaxed">
+                    <p>
+                      最不一致的一对尺子，一致率{" "}
+                      <span className="font-mono text-foreground">
+                        {formatPercent(
+                          Math.min(
+                            ...modelComparison.agreementMatrix.map(
+                              (item) => item.agreement,
+                            ),
+                          ),
+                        )}
+                      </span>
+                      ，有{" "}
+                      <span className="font-mono text-foreground">
+                        {Math.max(
+                          ...modelComparison.agreementMatrix.map(
+                            (item) => item.flips,
+                          ),
+                        )}
+                      </span>{" "}
+                      题的「达没达标」判断被翻转了。这个量级就是这套评测的误差下限——
+                      它决定了模型之间差多少个百分点才算「真的分出高下」。
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}
             </>
           ) : (
             <Card>
@@ -1126,7 +1193,14 @@ node --experimental-strip-types src/cli.ts ladder \\
   datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \\
   --reuse out/report.json --baseline out/report-previous.json
 
-# 4. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
+# 4. 跑多模型对比：换被测模型，再让每把尺子各量一遍
+#    主尺子量所有模型，其余尺子对同一批答案重新打分（答案不动）
+#    需要在 harness/.env 里配好几家服务商的密钥
+node --experimental-strip-types src/cli.ts compare \\
+  datasets/flask.json ../corpus/repos/flask-3.1.3 \\
+  --report out/report.json --report-out out/report.json
+
+# 5. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
 #    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`}</code>
               </pre>
               <p className="mt-4 text-sm text-muted-foreground">

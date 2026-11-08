@@ -141,30 +141,41 @@ QWEN_MODEL=qwen-plus
 ## 多模型对比：证明这把尺子有区分度
 
 一套评测台如果给强模型和弱模型打出同样的分，那它测的其实不是模型。
-所以同一份语料、同一套检索链路、同一把尺子，换几个模型各跑一轮，
+所以同一份语料、同一套检索链路、同一份配置，换几个模型各跑一轮，
 就能看出这套评测台到底能不能分辨出模型的好坏——以及不同模型的失败长什么样。
 
-```bash
-# 每个模型各跑一轮，最终配置（函数级切分 + 结构感知重排 + 术语桥）
-node --experimental-strip-types src/cli.ts run \
-  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model deepseek --out out/run-deepseek.json
-node --experimental-strip-types src/cli.ts run \
-  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model qwen --out out/run-qwen.json
-node --experimental-strip-types src/cli.ts run \
-  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model glm --out out/run-glm.json
+`compare` 命令把这件事一次做完：
 
-# 合并成一份汇总
-node --experimental-strip-types src/cli.ts report \
-  out/run-deepseek.json out/run-qwen.json out/run-glm.json --out out/report-multi.json
+```bash
+node --experimental-strip-types src/cli.ts compare \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 \
+  --report out/report-r3.json --report-out out/report-r4.json \
+  --out out/comparison.json
 ```
 
-汇总出来的 `runs` 里同一个切分方式会有多条（每个模型一条），而站点的策略矩阵是按切分方式取列的，
-所以这份汇总**不能直接替换** `out/report.json`——站上多模型那一段要单独从汇总里取数据。
+它做三件事：
+
+1. **所有被测模型跑同一份配置**（默认取阶梯的最后一轮，和站上已发布的数字同配置）。
+2. **主尺子量所有模型**。`--judges` 的第一个是主尺子，其余尺子对**同一批答案**重新打分——
+   答案一个字都不动，只有打分的人换人。这样两个尺子的分差就是尺子的误差。
+3. **算出一致率与自评偏袒**：两把尺子差 1 分以内的比例、达标判定被翻转的题数，
+   以及每把尺子给本家模型打的分比给别家高多少。
+
+`--agents` / `--judges` 用逗号分隔档案 id，不给就用 `.env` 里全部配置完整的档案：
+
+```bash
+node --experimental-strip-types src/cli.ts compare \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 \
+  --agents deepseek,qwen,glm --judges deepseek,glm
+```
+
+结果里的 `modelComparison` 会写进 `--report-out` 指定的报告文件，站点从那里读。
 
 两点要注意：
 
 - **复用旧记录时必须同模型。** 换模型就是换被测对象，上一个模型的运行记录不会被复用，
   否则等于什么都没测。judge 同理：换了打分模型，分数不在同一把尺子上，也不能复用。
+  `compare` 会自动复用配置、模型、尺子、代码版本都一致的旧记录（比如阶梯的最后一轮）。
 - **judge 可以单独指定。** 默认 judge 就是被测模型自己打分，这在小样本上问题不大，
   但多模型对比时会变成显眼靶子。用 `--judge-model` 换成别家模型来打分，
   被测模型的 token 按它的单价算，judge 的 token 按 judge 的单价算：

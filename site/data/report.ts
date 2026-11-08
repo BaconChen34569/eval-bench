@@ -219,6 +219,122 @@ export interface ExperimentReport {
   baseline?: BaselineSnapshot;
   /** 从基线版本到当前版本，代码层面改了什么 */
   changes?: string[];
+  /** 多模型对比：同一份配置下，几个模型被几把尺子各量一遍 */
+  modelComparison?: ModelComparison;
+}
+
+/** 一个被测模型在某个 judge 手里拿到的成绩。 */
+export interface ModelJudgeCell {
+  judgeModel: string;
+  judgeProfile: string;
+  judgeProfileLabel: string;
+  /** 这把尺子量出来的成功率 */
+  successRate: number;
+  /** 这把尺子量出来的平均分 */
+  avgJudgeScore: number;
+  /** 这把尺子这一轮打分花的钱 */
+  totalCost: number;
+}
+
+/** 多模型对比中的一行：一个被测模型在几把尺子下的成绩。 */
+export interface ModelComparisonRow {
+  agentModel: string;
+  agentProfile: string;
+  agentProfileLabel: string;
+  runId: string;
+  /** 是否复用了已有的运行记录 */
+  reused: boolean;
+  /** 每把尺子给这一行打的分 */
+  cells: ModelJudgeCell[];
+  /** 各尺子成功率的平均 */
+  avgSuccessRate: number;
+  avgJudgeScore: number;
+  avgEvidenceRecall: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  /** agent 生成答案花的钱 */
+  agentCost: number;
+  /** 全部打分花的钱 */
+  judgeCost: number;
+  totalCost: number;
+  totalTokens: number;
+  /** 失败归因分布 */
+  failureKinds: Record<string, number>;
+  /** 逐题得分：每把尺子给这道题打了几分 */
+  caseScores: { questionId: string; scores: Record<string, number> }[];
+}
+
+/** 两个 judge 在同一批答案上的一致程度。 */
+export interface JudgeAgreement {
+  agentModel: string;
+  judgeA: string;
+  judgeB: string;
+  sampled: number;
+  /** 分数相差不超过 1 分算一致 */
+  agreement: number;
+  /** 完全同分的比例 */
+  exactAgreement: number;
+  /** 成功判定被翻转的题数 */
+  flips: number;
+  judgeASuccessRate: number;
+  judgeBSuccessRate: number;
+}
+
+/** 两把尺子在全部答案上的一致程度。 */
+export interface JudgePairAgreement {
+  judgeA: string;
+  judgeB: string;
+  sampled: number;
+  agreement: number;
+  exactAgreement: number;
+  flips: number;
+  /** 两把尺子各自判出的成功率，换尺子会让这个数变成多少 */
+  judgeASuccessRate: number;
+  judgeBSuccessRate: number;
+}
+
+/** 一把尺子给本家模型打的分，比给别家模型的平均高多少。 */
+export interface SelfPreference {
+  judgeModel: string;
+  judgeProfile: string;
+  judgeProfileLabel: string;
+  ownModel: string;
+  ownAvgScore: number;
+  otherAvgScore: number;
+  gap: number;
+  /** 本家模型在这把尺子下排第几，1 是最高分 */
+  ownRank: number;
+}
+
+/**
+ * 多模型对比：同一份配置下，不同被测模型的成绩。
+ *
+ * 回答的是「这把尺子能不能区分出模型的好坏」：
+ * 每个模型都被同一批尺子量一遍，排名才有意义；
+ * 再把两把尺子放在一起比，看看换尺子会不会翻盘。
+ */
+export interface ModelComparison {
+  chunking: ChunkingStrategy;
+  retrieval: {
+    topK: number;
+    rerank: boolean;
+    rerankMode?: "none" | "symbol-boost" | "structure-aware";
+    queryExpansion?: boolean;
+  };
+  promptVersion: "base" | "cite-first";
+  successThreshold: number;
+  /** 打分模型，按列顺序排；第一把是主尺子 */
+  judges: { model: string; profile: string; label: string }[];
+  /** 主尺子：量所有被测模型的第一把尺子 */
+  primaryJudge: string;
+  rows: ModelComparisonRow[];
+  /** 每个被测模型：主尺子与其余尺子两两一致 */
+  agreements: JudgeAgreement[];
+  /** 尺子两两在全部答案上的一致率 */
+  agreementMatrix: JudgePairAgreement[];
+  /** 自评偏袒：本家模型是否被自己家的尺子打高了 */
+  selfPreference: SelfPreference[];
+  note: string;
 }
 
 export const report = raw as unknown as ExperimentReport;
@@ -240,6 +356,9 @@ export const baseline = report.baseline;
 
 /** 从基线版本到当前版本，代码层面改了什么。 */
 export const changes = report.changes ?? [];
+
+/** 多模型对比数据，旧报告没带时为 undefined。 */
+export const modelComparison = report.modelComparison;
 
 /** 某轮阶梯对应的运行记录。 */
 export function ladderRun(stepId: string): EvalRun | undefined {

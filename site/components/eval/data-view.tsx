@@ -5,6 +5,7 @@ import {
   formatNumber,
   formatPercent,
   ladder,
+  modelComparison,
   questions,
   report,
   runs,
@@ -31,6 +32,7 @@ import { useMemo, useState } from "react";
  */
 export function DataView() {
   const [keyword, setKeyword] = useState("");
+  const comparison = modelComparison;
 
   const rows = useMemo(() => {
     const key = keyword.trim().toLowerCase();
@@ -366,6 +368,147 @@ export function DataView() {
                         {report.costCurrency}
                         {step.summary.totalCost.toFixed(4)}
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {comparison && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">多模型对比</CardTitle>
+            <CardDescription>
+              同一份配置下换被测模型，每把尺子各量一遍。
+              主尺子是量所有模型的那一把，其余尺子只给同一批答案重新打分。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="eval-table eval-table-dense w-full min-w-[820px] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">被测模型</th>
+                    {comparison.judges.map((judge) => (
+                      <th
+                        key={judge.model}
+                        className="py-2 pr-3 text-right font-medium"
+                      >
+                        {judge.label}
+                        {judge.model === comparison.primaryJudge ? (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            主尺子
+                          </span>
+                        ) : null}
+                      </th>
+                    ))}
+                    <th className="py-2 pr-3 text-right font-medium">平均</th>
+                    <th className="py-2 pr-3 text-right font-medium">证据召回</th>
+                    <th className="py-2 pr-3 text-right font-medium">延迟</th>
+                    <th className="py-2 text-right font-medium">总成本</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {comparison.rows.map((row) => (
+                    <tr key={row.agentProfile} className="border-b last:border-0">
+                      <td className="py-2 pr-3 font-sans">
+                        {row.agentProfileLabel}
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {row.agentModel}
+                        </div>
+                      </td>
+                      {row.cells.map((cell) => (
+                        <td key={cell.judgeModel} className="py-2 pr-3 text-right">
+                          {formatPercent(cell.successRate)}
+                        </td>
+                      ))}
+                      <td className="py-2 pr-3 text-right">
+                        {formatPercent(row.avgSuccessRate)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {formatPercent(row.avgEvidenceRecall)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {formatNumber(row.avgLatencyMs)}
+                      </td>
+                      <td className="py-2 text-right">
+                        {report.costCurrency}
+                        {row.totalCost.toFixed(4)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="eval-table eval-table-dense w-full min-w-[620px] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">两把尺子</th>
+                    <th className="py-2 pr-3 text-right font-medium">一致率</th>
+                    <th className="py-2 pr-3 text-right font-medium">完全同分</th>
+                    <th className="py-2 text-right font-medium">翻转题数</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {comparison.agreementMatrix.map((item) => (
+                    <tr
+                      key={`${item.judgeA}-${item.judgeB}`}
+                      className="border-b last:border-0"
+                    >
+                      <td className="py-2 pr-3 font-sans">
+                        {item.judgeA} ↔ {item.judgeB}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {formatPercent(item.agreement)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {formatPercent(item.exactAgreement)}
+                      </td>
+                      <td className="py-2 text-right">
+                        {item.flips} / {item.sampled}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="eval-table eval-table-dense w-full min-w-[620px] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-3 font-medium">尺子</th>
+                    <th className="py-2 pr-3 text-right font-medium">本家均分</th>
+                    <th className="py-2 pr-3 text-right font-medium">他家均分</th>
+                    <th className="py-2 pr-3 text-right font-medium">差值</th>
+                    <th className="py-2 text-right font-medium">本家名次</th>
+                  </tr>
+                </thead>
+                <tbody className="font-mono tabular-nums">
+                  {comparison.selfPreference.map((item) => (
+                    <tr
+                      key={item.judgeModel}
+                      className="border-b last:border-0"
+                    >
+                      <td className="py-2 pr-3 font-sans">
+                        {item.judgeProfileLabel}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {item.ownAvgScore.toFixed(2)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {item.otherAvgScore.toFixed(2)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {item.gap >= 0 ? "+" : ""}
+                        {item.gap.toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right">{item.ownRank}</td>
                     </tr>
                   ))}
                 </tbody>

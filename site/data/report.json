@@ -19642,5 +19642,881 @@
     "切分（chunk.ts）：类内部的空隙不再单独成块，块数从 730 降到 557",
     "检索（retrieval.ts）：重排从符号加权升级为结构感知，文件路径单独加权",
     "检索（bilingual.ts）：新增中英术语扩展，中文提问也能命中英文代码"
-  ]
+  ],
+  "modelComparison": {
+    "chunking": {
+      "id": "function-level",
+      "label": "函数级切分",
+      "kind": "function-level",
+      "minFunctionLines": 3
+    },
+    "retrieval": {
+      "topK": 10,
+      "rerank": true,
+      "rerankMode": "structure-aware",
+      "queryExpansion": true
+    },
+    "promptVersion": "cite-first",
+    "successThreshold": 4,
+    "judges": [
+      {
+        "model": "deepseek-flash",
+        "profile": "deepseek",
+        "label": "DeepSeek"
+      },
+      {
+        "model": "glm-4-flash",
+        "profile": "glm",
+        "label": "智谱 GLM"
+      },
+      {
+        "model": "qwen-plus",
+        "profile": "qwen",
+        "label": "通义千问"
+      }
+    ],
+    "primaryJudge": "deepseek-flash",
+    "rows": [
+      {
+        "agentModel": "deepseek-flash",
+        "agentProfile": "deepseek",
+        "agentProfileLabel": "DeepSeek",
+        "runId": "ladder-v7-1794064200336",
+        "reused": true,
+        "cells": [
+          {
+            "judgeModel": "deepseek-flash",
+            "judgeProfile": "deepseek",
+            "judgeProfileLabel": "DeepSeek",
+            "successRate": 0.7272727272727273,
+            "avgJudgeScore": 4,
+            "totalCost": 0.32858099999999996
+          },
+          {
+            "judgeModel": "glm-4-flash",
+            "judgeProfile": "glm",
+            "judgeProfileLabel": "智谱 GLM",
+            "successRate": 0.9090909090909091,
+            "avgJudgeScore": 4.681818181818182,
+            "totalCost": 0
+          },
+          {
+            "judgeModel": "qwen-plus",
+            "judgeProfile": "qwen",
+            "judgeProfileLabel": "通义千问",
+            "successRate": 0.8636363636363636,
+            "avgJudgeScore": 4.363636363636363,
+            "totalCost": 0.1966036
+          }
+        ],
+        "avgSuccessRate": 0.8333333333333334,
+        "avgJudgeScore": 4.348484848484849,
+        "avgEvidenceRecall": 0.7878787878787878,
+        "avgLatencyMs": 18206.590909090908,
+        "p95LatencyMs": 38629,
+        "agentCost": 0.39764608,
+        "judgeCost": 0.5251846,
+        "totalCost": 0.92283068,
+        "totalTokens": 1023231,
+        "failureKinds": {
+          "missing-detail": 3,
+          "wrong-location": 3
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q02",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q03",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q04",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q05",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q06",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q07",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q08",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 3,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q09",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q10",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q11",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q12",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 4,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q13",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q14",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q15",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q16",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q17",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q18",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q19",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 4,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q20",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 4,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q21",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 3,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q22",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          }
+        ]
+      },
+      {
+        "agentModel": "glm-4-flash",
+        "agentProfile": "glm",
+        "agentProfileLabel": "智谱 GLM",
+        "runId": "compare-glm-1794073106416",
+        "reused": false,
+        "cells": [
+          {
+            "judgeModel": "deepseek-flash",
+            "judgeProfile": "deepseek",
+            "judgeProfileLabel": "DeepSeek",
+            "successRate": 0.09090909090909091,
+            "avgJudgeScore": 2.3181818181818183,
+            "totalCost": 0.32689999999999997
+          },
+          {
+            "judgeModel": "glm-4-flash",
+            "judgeProfile": "glm",
+            "judgeProfileLabel": "智谱 GLM",
+            "successRate": 0.9090909090909091,
+            "avgJudgeScore": 4.363636363636363,
+            "totalCost": 0
+          },
+          {
+            "judgeModel": "qwen-plus",
+            "judgeProfile": "qwen",
+            "judgeProfileLabel": "通义千问",
+            "successRate": 0.5454545454545454,
+            "avgJudgeScore": 3.3181818181818183,
+            "totalCost": 0.18414600000000003
+          }
+        ],
+        "avgSuccessRate": 0.5151515151515151,
+        "avgJudgeScore": 3.3333333333333335,
+        "avgEvidenceRecall": 0.6590909090909091,
+        "avgLatencyMs": 22407.409090909092,
+        "p95LatencyMs": 35885,
+        "agentCost": 0,
+        "judgeCost": 0.511046,
+        "totalCost": 0.511046,
+        "totalTokens": 913750,
+        "failureKinds": {
+          "missing-detail": 15,
+          "wrong-location": 4,
+          "hallucination": 1
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q02",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q03",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q04",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 4,
+              "qwen-plus": 3
+            }
+          },
+          {
+            "questionId": "q05",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 4,
+              "qwen-plus": 3
+            }
+          },
+          {
+            "questionId": "q06",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q07",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q08",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 2,
+              "qwen-plus": 1
+            }
+          },
+          {
+            "questionId": "q09",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 4,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q10",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q11",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q12",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 4,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q13",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q14",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q15",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q16",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 4,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q17",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q18",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 4,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q19",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q20",
+            "scores": {
+              "deepseek-flash": 1,
+              "glm-4-flash": 4,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q21",
+            "scores": {
+              "deepseek-flash": 1,
+              "glm-4-flash": 2,
+              "qwen-plus": 1
+            }
+          },
+          {
+            "questionId": "q22",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 4,
+              "qwen-plus": 2
+            }
+          }
+        ]
+      },
+      {
+        "agentModel": "qwen-plus",
+        "agentProfile": "qwen",
+        "agentProfileLabel": "通义千问",
+        "runId": "compare-qwen-1794074002029",
+        "reused": false,
+        "cells": [
+          {
+            "judgeModel": "deepseek-flash",
+            "judgeProfile": "deepseek",
+            "judgeProfileLabel": "DeepSeek",
+            "successRate": 0.4090909090909091,
+            "avgJudgeScore": 3.1363636363636362,
+            "totalCost": 0.3498030000000001
+          },
+          {
+            "judgeModel": "glm-4-flash",
+            "judgeProfile": "glm",
+            "judgeProfileLabel": "智谱 GLM",
+            "successRate": 0.9090909090909091,
+            "avgJudgeScore": 4.681818181818182,
+            "totalCost": 0
+          },
+          {
+            "judgeModel": "qwen-plus",
+            "judgeProfile": "qwen",
+            "judgeProfileLabel": "通义千问",
+            "successRate": 0.8636363636363636,
+            "avgJudgeScore": 4.2272727272727275,
+            "totalCost": 0.18612760000000003
+          }
+        ],
+        "avgSuccessRate": 0.7272727272727272,
+        "avgJudgeScore": 4.015151515151516,
+        "avgEvidenceRecall": 0.712121212121212,
+        "avgLatencyMs": 14621.454545454546,
+        "p95LatencyMs": 19634,
+        "agentCost": 0.18197040000000003,
+        "judgeCost": 0.5359306000000001,
+        "totalCost": 0.7179010000000001,
+        "totalTokens": 914967,
+        "failureKinds": {
+          "missing-detail": 10,
+          "timeout": 1,
+          "wrong-location": 2
+        },
+        "caseScores": [
+          {
+            "questionId": "q01",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q02",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q03",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q04",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q05",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q06",
+            "scores": {
+              "deepseek-flash": 1,
+              "glm-4-flash": 4,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q07",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q08",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 3,
+              "qwen-plus": 2
+            }
+          },
+          {
+            "questionId": "q09",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q10",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q11",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q12",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q13",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q14",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q15",
+            "scores": {
+              "deepseek-flash": 5,
+              "glm-4-flash": 5,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q16",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 4,
+              "qwen-plus": 5
+            }
+          },
+          {
+            "questionId": "q17",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q18",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q19",
+            "scores": {
+              "deepseek-flash": 4,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          },
+          {
+            "questionId": "q20",
+            "scores": {
+              "deepseek-flash": 2,
+              "glm-4-flash": 5,
+              "qwen-plus": 3
+            }
+          },
+          {
+            "questionId": "q21",
+            "scores": {
+              "deepseek-flash": 1,
+              "glm-4-flash": 2,
+              "qwen-plus": 1
+            }
+          },
+          {
+            "questionId": "q22",
+            "scores": {
+              "deepseek-flash": 3,
+              "glm-4-flash": 5,
+              "qwen-plus": 4
+            }
+          }
+        ]
+      }
+    ],
+    "agreements": [
+      {
+        "agentModel": "deepseek-flash",
+        "judgeA": "deepseek-flash",
+        "judgeB": "glm-4-flash",
+        "sampled": 22,
+        "agreement": 0.8636363636363636,
+        "exactAgreement": 0.5454545454545454,
+        "flips": 4,
+        "judgeASuccessRate": 0.7272727272727273,
+        "judgeBSuccessRate": 0.9090909090909091
+      },
+      {
+        "agentModel": "deepseek-flash",
+        "judgeA": "deepseek-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 22,
+        "agreement": 0.9090909090909091,
+        "exactAgreement": 0.7272727272727273,
+        "flips": 3,
+        "judgeASuccessRate": 0.7272727272727273,
+        "judgeBSuccessRate": 0.8636363636363636
+      },
+      {
+        "agentModel": "deepseek-flash",
+        "judgeA": "glm-4-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 22,
+        "agreement": 0.9545454545454546,
+        "exactAgreement": 0.7272727272727273,
+        "flips": 1,
+        "judgeASuccessRate": 0.9090909090909091,
+        "judgeBSuccessRate": 0.8636363636363636
+      },
+      {
+        "agentModel": "glm-4-flash",
+        "judgeA": "deepseek-flash",
+        "judgeB": "glm-4-flash",
+        "sampled": 22,
+        "agreement": 0.2727272727272727,
+        "exactAgreement": 0.045454545454545456,
+        "flips": 18,
+        "judgeASuccessRate": 0.09090909090909091,
+        "judgeBSuccessRate": 0.9090909090909091
+      },
+      {
+        "agentModel": "glm-4-flash",
+        "judgeA": "deepseek-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 22,
+        "agreement": 0.6818181818181818,
+        "exactAgreement": 0.2727272727272727,
+        "flips": 10,
+        "judgeASuccessRate": 0.09090909090909091,
+        "judgeBSuccessRate": 0.5454545454545454
+      },
+      {
+        "agentModel": "glm-4-flash",
+        "judgeA": "glm-4-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 22,
+        "agreement": 0.7272727272727273,
+        "exactAgreement": 0.22727272727272727,
+        "flips": 8,
+        "judgeASuccessRate": 0.9090909090909091,
+        "judgeBSuccessRate": 0.5454545454545454
+      },
+      {
+        "agentModel": "qwen-plus",
+        "judgeA": "deepseek-flash",
+        "judgeB": "glm-4-flash",
+        "sampled": 22,
+        "agreement": 0.5454545454545454,
+        "exactAgreement": 0.09090909090909091,
+        "flips": 11,
+        "judgeASuccessRate": 0.4090909090909091,
+        "judgeBSuccessRate": 0.9090909090909091
+      },
+      {
+        "agentModel": "qwen-plus",
+        "judgeA": "deepseek-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 22,
+        "agreement": 0.7272727272727273,
+        "exactAgreement": 0.2727272727272727,
+        "flips": 10,
+        "judgeASuccessRate": 0.4090909090909091,
+        "judgeBSuccessRate": 0.8636363636363636
+      },
+      {
+        "agentModel": "qwen-plus",
+        "judgeA": "glm-4-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 22,
+        "agreement": 0.9545454545454546,
+        "exactAgreement": 0.4090909090909091,
+        "flips": 1,
+        "judgeASuccessRate": 0.9090909090909091,
+        "judgeBSuccessRate": 0.8636363636363636
+      }
+    ],
+    "agreementMatrix": [
+      {
+        "judgeA": "deepseek-flash",
+        "judgeB": "glm-4-flash",
+        "sampled": 66,
+        "agreement": 0.5606060606060606,
+        "exactAgreement": 0.22727272727272727,
+        "flips": 33,
+        "judgeASuccessRate": 0.4090909090909091,
+        "judgeBSuccessRate": 0.9090909090909091
+      },
+      {
+        "judgeA": "deepseek-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 66,
+        "agreement": 0.7727272727272727,
+        "exactAgreement": 0.42424242424242425,
+        "flips": 23,
+        "judgeASuccessRate": 0.4090909090909091,
+        "judgeBSuccessRate": 0.7575757575757576
+      },
+      {
+        "judgeA": "glm-4-flash",
+        "judgeB": "qwen-plus",
+        "sampled": 66,
+        "agreement": 0.8787878787878788,
+        "exactAgreement": 0.45454545454545453,
+        "flips": 10,
+        "judgeASuccessRate": 0.9090909090909091,
+        "judgeBSuccessRate": 0.7575757575757576
+      }
+    ],
+    "selfPreference": [
+      {
+        "judgeModel": "deepseek-flash",
+        "judgeProfile": "deepseek",
+        "judgeProfileLabel": "DeepSeek",
+        "ownModel": "deepseek-flash",
+        "ownAvgScore": 4,
+        "otherAvgScore": 2.7272727272727275,
+        "gap": 1.2727272727272725,
+        "ownRank": 1
+      },
+      {
+        "judgeModel": "glm-4-flash",
+        "judgeProfile": "glm",
+        "judgeProfileLabel": "智谱 GLM",
+        "ownModel": "glm-4-flash",
+        "ownAvgScore": 4.363636363636363,
+        "otherAvgScore": 4.681818181818182,
+        "gap": -0.31818181818181834,
+        "ownRank": 3
+      },
+      {
+        "judgeModel": "qwen-plus",
+        "judgeProfile": "qwen",
+        "judgeProfileLabel": "通义千问",
+        "ownModel": "qwen-plus",
+        "ownAvgScore": 4.2272727272727275,
+        "otherAvgScore": 3.840909090909091,
+        "gap": 0.3863636363636367,
+        "ownRank": 2
+      }
+    ],
+    "note": "所有被测模型跑同一份配置（函数级切分，top-10，structure-aware，中英术语扩展，提示词 cite-first），主尺子 DeepSeek（deepseek-flash）量所有模型；其余尺子对同一批答案重新打分，答案未改动。"
+  }
 }

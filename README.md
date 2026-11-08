@@ -46,7 +46,14 @@ node --experimental-strip-types src/cli.ts experiment \
 
 要跑多模型对比（同一套题换几个模型各跑一轮，看评测台能不能区分出模型好坏）：
 `harness/.env` 里按前缀配好几组服务商，`cp harness/.env.example harness/.env` 之后照着填，
-然后 `node --experimental-strip-types src/cli.ts run ... --model qwen`。
+然后一条命令把「换模型 + 换尺子重打分 + 算一致率」全做完：
+
+```bash
+node --experimental-strip-types src/cli.ts compare \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 \
+  --report out/report.json --report-out out/report.json
+```
+
 写法见 [harness/README.md](harness/README.md)。
 
 站点：

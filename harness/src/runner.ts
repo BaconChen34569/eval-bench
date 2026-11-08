@@ -36,6 +36,10 @@ export interface RunOptions {
   runId: string;
   /** agent 提示词版本，横切分策略对比时固定为 base */
   promptVersion?: PromptVersion;
+  /** 被测模型所属的档案 id，如 deepseek。站上展示的名字靠它 */
+  profile?: string;
+  /** 档案的展示名，如「通义千问」 */
+  profileLabel?: string;
   /** 只跑前 N 题，用于快速验证链路 */
   limit?: number;
   onProgress?: (done: number, total: number, message: string) => void;
@@ -110,6 +114,11 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
         question.reference.evidence,
       );
 
+      // agent 和 judge 分别算钱：多模型对比里两家单价不一样，
+      // 混在一起就看不出「贵在哪」。
+      const agentCost = estimateCost(answer.tokens, llm.pricePerMillion);
+      const judgeCost = estimateCost(judged.tokens, judgeLlm.pricePerMillion);
+
       caseResult = {
         questionId: question.id,
         category: question.category,
@@ -127,11 +136,8 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
           judgePrompt: judged.tokens.prompt,
           judgeCompletion: judged.tokens.completion,
         },
-        // agent 和 judge 都要花钱，两次调用一起算。
-        // judge 可能是别家模型，单价不一样，分开算。
-        cost:
-          estimateCost(answer.tokens, llm.pricePerMillion) +
-          estimateCost(judged.tokens, judgeLlm.pricePerMillion),
+        cost: agentCost + judgeCost,
+        judgeCost,
         failureKind: classifyFailure(
           {
             answerCitations: parseAnswerCitations(answer.answer),
@@ -161,6 +167,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
           judgeCompletion: 0,
         },
         cost: 0,
+        judgeCost: 0,
         failureKind: "timeout",
       };
     }
@@ -184,6 +191,8 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
     codeVersion: CODE_VERSION,
     model: llm.model,
     judgeModel: judgeLlm.model,
+    profile: options.profile,
+    profileLabel: options.profileLabel,
     startedAt,
     finishedAt: new Date().toISOString(),
     summary,
