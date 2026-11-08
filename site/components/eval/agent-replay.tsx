@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
+import { ChevronRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Markdown } from "@/components/eval/markdown";
@@ -66,17 +67,20 @@ export function AgentReplay() {
   const list = useMemo(
     () =>
       questions.filter((item) => {
-        const entry = caseOf(finalRun, item.questionId);
-        if (!entry) return false;
-        if (filter === "pass") return entry.judgeScore >= threshold;
-        if (filter === "fail") return entry.judgeScore < threshold;
+        const record = caseOf(finalRun, item.questionId);
+        if (!record) return false;
+        if (filter === "pass") return record.judgeScore >= threshold;
+        if (filter === "fail") return record.judgeScore < threshold;
         return true;
       }),
     [filter, threshold],
   );
 
+  // 筛选后如果当前题不在列表里，就落到列表第一题，避免显示一道被筛掉的题。
   const selected =
-    questions.find((item) => item.questionId === selectedId) ?? questions[0];
+    list.find((item) => item.questionId === selectedId) ??
+    list[0] ??
+    questions[0];
   const run = version === "final" ? finalRun : baseRun;
   const step = version === "final" ? finalStep : baseStep;
   const entry = selected ? caseOf(run, selected.questionId) : undefined;
@@ -101,10 +105,12 @@ export function AgentReplay() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div id="replay" className="flex flex-col gap-5">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">看哪个版本</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            看哪个版本
+          </span>
           {(
             [
               ["final", `最终版 · ${finalStep?.id ?? ""}`],
@@ -131,148 +137,163 @@ export function AgentReplay() {
           <span className="text-[11px] text-muted-foreground">
             {configOf(step)}
           </span>
+          <div className="ml-auto flex flex-wrap gap-1.5">
+            {(
+              [
+                ["all", "全部"],
+                ["pass", "答对"],
+                ["fail", "答错"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setFilter(id)}
+                aria-pressed={filter === id}
+                className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
+                  filter === id
+                    ? "border-transparent bg-primary text-primary-foreground"
+                    : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* 题号横向排开，题库不再占一列，省下来的宽度全给回答。 */}
         <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              ["all", "全部"],
-              ["pass", "答对"],
-              ["fail", "答错"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setFilter(id)}
-              aria-pressed={filter === id}
-              className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors ${
-                filter === id
-                  ? "border-transparent bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          {list.map((item) => {
+            const record = caseOf(finalRun, item.questionId);
+            const score = record?.judgeScore ?? 0;
+            const ok = score >= threshold;
+            const active = item.questionId === selected.questionId;
+            return (
+              <button
+                key={item.questionId}
+                type="button"
+                title={item.question}
+                onClick={() => {
+                  setSelectedId(item.questionId);
+                  setExpanded(false);
+                }}
+                aria-pressed={active}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] tabular-nums transition-colors",
+                  active
+                    ? "border-transparent bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    active
+                      ? "bg-background"
+                      : ok
+                        ? "bg-chart-2"
+                        : "bg-destructive",
+                  )}
+                />
+                {item.questionId}
+              </button>
+            );
+          })}
         </div>
+        <p className="text-[11px] text-muted-foreground">
+          圆点是最终版的 judge 结论：绿=达标（≥{threshold} 分），红=未达标。
+        </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
-        <aside className="min-w-0 lg:sticky lg:top-16 lg:self-start">
-          <div className="mb-2 flex items-baseline justify-between gap-2 px-2.5 text-[11px] text-muted-foreground">
-            <span>题目</span>
-            <span>最终版 judge 分</span>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2 rounded-xl border-l-2 border-border bg-card px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
+              提问
+            </span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {selected.questionId}
+            </span>
+            <Badge variant="secondary">{CATEGORY_LABEL[selected.category]}</Badge>
+            <Badge variant="outline">{DIFFICULTY_LABEL[selected.difficulty]}</Badge>
           </div>
-          <ul className="flex max-h-[420px] flex-col gap-1 overflow-auto pr-1">
-            {list.map((item) => {
-              const record = caseOf(finalRun, item.questionId);
-              const score = record?.judgeScore ?? 0;
-              const ok = score >= threshold;
-              const active = item.questionId === selected.questionId;
-              return (
-                <li key={item.questionId} className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedId(item.questionId);
-                      setExpanded(false);
-                    }}
-                    className={cn(
-                      "flex w-full min-w-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-left transition-colors",
-                      active
-                        ? "border-transparent bg-accent"
-                        : "border-transparent hover:bg-accent/60",
-                    )}
-                  >
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {item.questionId}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">
-                      {item.question}
-                    </span>
-                    <span
-                      className={cn(
-                        "shrink-0 font-mono text-[11px] tabular-nums",
-                        ok ? "text-chart-2" : "text-destructive",
-                      )}
-                    >
-                      {score}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </aside>
+          <p className="text-[15px] leading-relaxed font-medium">
+            {selected.question}
+          </p>
+        </div>
 
-        <div className="flex min-w-0 flex-col gap-4">
-          <Card title={selected.question}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs text-muted-foreground">
-                {selected.questionId}
-              </span>
-              <Badge variant="secondary">{CATEGORY_LABEL[selected.category]}</Badge>
-              <Badge variant="outline">{DIFFICULTY_LABEL[selected.difficulty]}</Badge>
-              <Badge
-                variant={passed ? "default" : "destructive"}
-                className={passed ? "bg-chart-2 text-white" : ""}
-              >
-                judge {entry.judgeScore}/5
-              </Badge>
-              {entry.failureKind && (
-                <Badge variant="outline">{FAILURE_LABEL[entry.failureKind]}</Badge>
-              )}
-              <span className="text-[11px] text-muted-foreground">
-                {otherLabel}同一题 {otherEntry?.judgeScore ?? "-"}/5 ·
-                证据召回 {formatPercent(entry.evidenceRecall)} · 延迟{" "}
-                {formatNumber(entry.latencyMs)} ms · 花费 {report.costCurrency}
-                {entry.cost.toFixed(4)}
-              </span>
-            </div>
-          </Card>
-
-          <div className="rounded-lg border-l-2 border-chart-1 bg-secondary/50 px-3 py-2">
-            <div className="mb-1 text-[11px] font-semibold text-muted-foreground">
-              judge 判语（{step.id}）
-            </div>
-            <p className="text-xs leading-relaxed text-foreground">
-              {entry.judgeReason}
-            </p>
-          </div>
-
-          <div className="overflow-hidden rounded-lg border bg-card">
-            <div className="flex items-center justify-between gap-3 border-b bg-secondary/50 px-3.5 py-2">
-              <span className="text-[11px] font-semibold text-muted-foreground">
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-secondary/50 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold tracking-wide text-muted-foreground">
                 课设 Copilot 的回答
               </span>
+              <Badge variant="outline">{step.id}</Badge>
+            </div>
+            <div className="flex items-center gap-2">
               <span className="font-mono text-[10px] text-muted-foreground/80">
                 {formatNumber(entry.answer.length)} 字符
               </span>
-            </div>
-            <div
-              className={cn(
-                "relative px-3.5 py-3 [&_code]:break-all",
-                !expanded && "max-h-96 overflow-hidden",
-              )}
-            >
-              <Markdown text={entry.answer} />
-              {!expanded && (
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
-              )}
-            </div>
-            <div className="flex justify-end border-t bg-secondary/30 px-3.5 py-1.5">
               <button
                 type="button"
                 onClick={() => setExpanded(!expanded)}
-                className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
-                {expanded ? "收起回答" : "展开全文"}
+                {expanded ? "收起" : "展开全文"}
               </button>
             </div>
           </div>
+          <div
+            className={cn(
+              "relative px-4 py-3 [&_code]:break-all",
+              !expanded && "max-h-[420px] overflow-hidden",
+            )}
+          >
+            <Markdown text={entry.answer} />
+            {!expanded && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
+            )}
+          </div>
+        </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border bg-card px-3.5 py-3">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <Badge
+            variant={passed ? "default" : "destructive"}
+            className={passed ? "bg-chart-2 text-white" : ""}
+          >
+            judge {entry.judgeScore}/5
+          </Badge>
+          {entry.failureKind && (
+            <Badge variant="outline">{FAILURE_LABEL[entry.failureKind]}</Badge>
+          )}
+          <span>
+            {otherLabel}同一题 {otherEntry?.judgeScore ?? "-"}/5 · 证据召回{" "}
+            {formatPercent(entry.evidenceRecall)} · 延迟{" "}
+            {formatNumber(entry.latencyMs)} ms · 花费 {report.costCurrency}
+            {entry.cost.toFixed(4)}
+          </span>
+        </div>
+
+        <div className="rounded-lg border-l-2 border-chart-1 bg-secondary/50 px-3.5 py-2.5">
+          <div className="mb-1 text-[11px] font-semibold text-muted-foreground">
+            judge 判语
+          </div>
+          <p className="text-xs leading-relaxed text-foreground">
+            {entry.judgeReason}
+          </p>
+        </div>
+
+        <details className="group rounded-lg border bg-card">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground">
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+            检索证据
+            <span className="text-xs font-normal text-muted-foreground">
+              标准答案要求的位置，与这一轮实际送进 prompt 的代码块
+            </span>
+          </summary>
+          <div className="grid gap-4 border-t px-4 py-4 sm:grid-cols-2">
+            <div>
               <div className="mb-2 text-[11px] font-semibold text-muted-foreground">
                 标准答案要求的证据
               </div>
@@ -295,9 +316,9 @@ export function AgentReplay() {
               </ul>
             </div>
 
-            <div className="rounded-lg border bg-card px-3.5 py-3">
+            <div>
               <div className="mb-2 flex items-baseline justify-between gap-2 text-[11px] font-semibold text-muted-foreground">
-                <span>这一轮送进 prompt 的代码块</span>
+                <span>送进 prompt 的代码块</span>
                 <span className="font-mono">
                   {hits} / {(entry.citations ?? []).length} 命中证据
                 </span>
@@ -312,10 +333,14 @@ export function AgentReplay() {
                       key={`${citation.file}-${citation.startLine}-${index}`}
                       className={cn(
                         "flex items-start gap-1.5 rounded px-1.5 py-1 font-mono text-[11px] leading-snug",
-                        hit ? "bg-chart-2/15 text-foreground" : "text-muted-foreground",
+                        hit
+                          ? "bg-chart-2/15 text-foreground"
+                          : "text-muted-foreground",
                       )}
                     >
-                      <span className={hit ? "text-chart-2" : "text-muted-foreground/50"}>
+                      <span
+                        className={hit ? "text-chart-2" : "text-muted-foreground/50"}
+                      >
                         {hit ? "●" : "○"}
                       </span>
                       <span className="min-w-0 break-all">
@@ -327,31 +352,19 @@ export function AgentReplay() {
               </ol>
             </div>
           </div>
+        </details>
 
-          <p className="text-xs text-muted-foreground">
-            这一题在评测台里的完整记录（
-            <a href="#questions" className="underline underline-offset-4 hover:text-foreground">
-              逐题检索台
-            </a>
-            ）里可以对照三种切分策略的检索排名。
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          这一题在评测台里的完整记录（
+          <a
+            href="#questions"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            逐题检索台
+          </a>
+          ）里可以对照三种切分策略的检索排名。
+        </p>
       </div>
-    </div>
-  );
-}
-
-function Card({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border bg-card px-3.5 py-3">
-      <p className="mb-2 text-sm leading-relaxed font-medium">{title}</p>
-      {children}
     </div>
   );
 }

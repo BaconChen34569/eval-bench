@@ -163,7 +163,7 @@ const CHAPTERS: {
     id: "agent",
     numeral: "1",
     title: "课设 Copilot 实战问答",
-    lead: "先看东西本身：给它一个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。左边挑一道题，右边看它当时到底怎么答的——包括答错的时候。",
+    lead: "先看东西本身：给它一个仓库和一个关于代码的问题，它自己找代码、读代码、给出带行号引用的答案。下面按题号挑一道，看它当时到底怎么答的——包括答错的时候。",
     sections: [
       { id: "agent", label: "它是怎么工作的", short: "怎么工作" },
       { id: "ask", label: "实战问答", short: "问答" },
@@ -609,7 +609,7 @@ export default function App() {
           <div className="flex flex-col gap-2">
             <SectionTitle id="ask">实战问答：挑一道题看它怎么答</SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-              左边是 {questions.length} 道题，选一道，右边就是完整的一次问答：
+              下面是 {questions.length} 道题，每道题一个题号。挑一个，下面就是完整的一次问答：
               问题、它拿到的代码块、它写出的答案、judge 的判语。
               可以在「起步版」和「最终版」之间切换——同一道题，
               同一个模型、同一把尺子，只是工具本身被改过。
