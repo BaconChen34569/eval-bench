@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { GitBranch } from "lucide-react";
+import { ChevronRight, GitBranch } from "lucide-react";
 
 import {
   CATEGORY_LABEL,
@@ -145,37 +145,77 @@ const headlineWrongLocation = headlineFailed.filter(
   (item) => item.failureKind === "wrong-location",
 ).length;
 
-const SECTIONS = [
-  { id: "why", label: "为什么先测检索层", short: "为什么" },
-  { id: "experiment", label: "切分策略对比", short: "切分对比" },
-  ...(hasGeneration
-    ? [{ id: "generation", label: "生成层结果", short: "生成层" }]
-    : []),
-  ...(report.baseline
-    ? [{ id: "baseline", label: "优化前后", short: "前后" }]
-    : []),
-  ...(ladder.length > 0
-    ? [{ id: "ladder", label: "工具迭代史", short: "迭代史" }]
-    : []),
-  ...(modelComparison
-    ? [{ id: "models", label: "多模型对比", short: "多模型" }]
-    : []),
-  { id: "questions", label: "逐题检索台", short: "逐题" },
-  { id: "failures", label: "失败归因", short: "失败" },
-  { id: "trust", label: "信任基础", short: "信任" },
-  { id: "repro", label: "怎么复现", short: "复现" },
+/**
+ * 页面按三章组织，导航和正文用的是同一份结构：
+ * 改一处章节顺序，导航和首屏目录会一起动。
+ */
+type SectionMeta = { id: string; label: string; short: string };
+
+const CHAPTERS: {
+  id: string;
+  numeral: string;
+  title: string;
+  lead: string;
+  sections: SectionMeta[];
+}[] = [
+  {
+    id: "method",
+    numeral: "1",
+    title: "评测台怎么测",
+    lead: "先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。",
+    sections: [
+      { id: "why", label: "为什么先测检索层", short: "为什么" },
+      { id: "experiment", label: "切分策略对比", short: "切分对比" },
+      ...(hasGeneration
+        ? [{ id: "generation", label: "生成层结果", short: "生成层" }]
+        : []),
+    ],
+  },
+  {
+    id: "result",
+    numeral: "2",
+    title: "结论有多硬",
+    lead: "把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。",
+    sections: [
+      ...(report.baseline
+        ? [{ id: "baseline", label: "优化前后", short: "前后" }]
+        : []),
+      ...(ladder.length > 0
+        ? [{ id: "ladder", label: "工具迭代史", short: "迭代史" }]
+        : []),
+      ...(modelComparison
+        ? [{ id: "models", label: "多模型对比", short: "多模型" }]
+        : []),
+    ],
+  },
+  {
+    id: "evidence",
+    numeral: "3",
+    title: "证据与复现",
+    lead: "每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。",
+    sections: [
+      { id: "questions", label: "逐题检索台", short: "逐题" },
+      { id: "failures", label: "失败归因", short: "失败" },
+      { id: "trust", label: "信任基础", short: "信任" },
+      { id: "repro", label: "怎么复现", short: "复现" },
+    ],
+  },
 ];
 
-const QUICK_LINKS = [
-  { href: "#questions", label: "逐题检索台" },
-  { href: "#failures", label: "失败归因" },
-  { href: "#repro", label: "怎么复现" },
-];
+const SECTIONS = CHAPTERS.flatMap((chapter) => chapter.sections);
+
+/** 窄屏下拉里的选项带上章节序号，避免只剩下孤零零的小标题。 */
+const NAV_ITEMS = CHAPTERS.flatMap((chapter) =>
+  chapter.sections.map((section) => ({
+    ...section,
+    option: `${chapter.numeral} · ${section.short}`,
+  })),
+);
 
 /** 章节标题：24px/600，悬停时露出一个锚点，方便评委直接引用某一节。 */
 function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <h2
+    <h3
       id={id}
       className="group flex items-baseline gap-2 text-2xl font-semibold tracking-tight"
     >
@@ -187,7 +227,45 @@ function SectionTitle({ id, children }: { id: string; children: ReactNode }) {
       >
         #
       </a>
-    </h2>
+    </h3>
+  );
+}
+
+/**
+ * 章标题：一条横贯的分隔线 + 序号 + 一句话说明。
+ * 页面上内容多，靠这条线告诉读者「现在读到第几章、这一章要解决什么」。
+ */
+function ChapterHeader({
+  id,
+  numeral,
+  title,
+  lead,
+  first = false,
+}: {
+  id: string;
+  numeral: string;
+  title: string;
+  lead: string;
+  first?: boolean;
+}) {
+  return (
+    <div
+      id={id}
+      className={`flex scroll-mt-16 flex-col gap-3 ${first ? "" : "mt-16 border-t pt-10"}`}
+    >
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+          {numeral}
+        </span>
+        <span className="text-xs font-medium text-muted-foreground">
+          第 {numeral} 章
+        </span>
+        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      </div>
+      <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+        {lead}
+      </p>
+    </div>
   );
 }
 
@@ -278,26 +356,43 @@ export default function App() {
 
           {view === "story" ? (
             <>
-              <div className="hidden flex-1 gap-7 overflow-x-auto md:flex">
-                {SECTIONS.map((section) => (
-                  <a
-                    key={section.id}
-                    href={`#${section.id}`}
-                    aria-current={
-                      activeSection === section.id ? "true" : undefined
-                    }
-                    className={`shrink-0 transition-colors ${
-                      activeSection === section.id
-                        ? "font-medium text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
+              {/* 十个章节标题平铺必然放不下，改为按章分组：序号 + 章内小标题。 */}
+              <nav className="hidden flex-1 items-center gap-1 overflow-x-auto scrollbar-none lg:flex">
+                {CHAPTERS.map((chapter, chapterIndex) => (
+                  <div
+                    key={chapter.id}
+                    className="flex shrink-0 items-center gap-0.5"
                   >
-                    {section.label}
-                  </a>
+                    {chapterIndex > 0 && (
+                      <span className="mx-2 h-3.5 w-px bg-border" aria-hidden />
+                    )}
+                    <span
+                      className="mr-1 flex size-4 shrink-0 items-center justify-center rounded-full bg-secondary text-[10px] leading-none text-muted-foreground"
+                      title={`第 ${chapter.numeral} 章 ${chapter.title}`}
+                    >
+                      {chapter.numeral}
+                    </span>
+                    {chapter.sections.map((section) => (
+                      <a
+                        key={section.id}
+                        href={`#${section.id}`}
+                        aria-current={
+                          activeSection === section.id ? "true" : undefined
+                        }
+                        className={`rounded px-1.5 py-1 transition-colors ${
+                          activeSection === section.id
+                            ? "bg-accent font-medium text-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {section.short}
+                      </a>
+                    ))}
+                  </div>
                 ))}
-              </div>
-              {/* 窄屏放不下七个章节标签，折成一个下拉。 */}
-              <div className="min-w-0 flex-1 md:hidden">
+              </nav>
+              {/* 窄屏放不下章节标签，折成一个下拉。 */}
+              <div className="min-w-0 flex-1 lg:hidden">
                 <NativeSelect
                   size="sm"
                   className="truncate"
@@ -309,16 +404,16 @@ export default function App() {
                       ?.scrollIntoView({ behavior: "smooth", block: "start" });
                   }}
                 >
-                  {SECTIONS.map((section) => (
-                    <NativeSelectOption key={section.id} value={section.id}>
-                      {section.short}
+                  {NAV_ITEMS.map((item) => (
+                    <NativeSelectOption key={item.id} value={item.id}>
+                      {item.option}
                     </NativeSelectOption>
                   ))}
                 </NativeSelect>
               </div>
             </>
           ) : (
-            <span className="hidden flex-1 text-muted-foreground md:block">
+            <span className="hidden flex-1 text-muted-foreground lg:block">
               数据视图：每个指标都可查、可筛、可导出
             </span>
           )}
@@ -372,15 +467,37 @@ export default function App() {
               {questions.length} 道代码问答题，每道题写清楚了答案必须落在哪几行代码上，
               再用同一套检索器去比较不同切分策略，把失败精确地定位到文件、行号和缺失的要点。
             </p>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              {QUICK_LINKS.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-full border bg-card px-4 py-2 text-sm text-foreground/80 transition-colors hover:border-link/40 hover:text-link"
+            {/* 首屏不放散装链接，直接给三章目录：读完这一行就知道整页怎么走。 */}
+            <div className="grid w-full gap-3 sm:grid-cols-3">
+              {CHAPTERS.map((chapter) => (
+                <div
+                  key={chapter.id}
+                  className="flex flex-col gap-2 rounded-xl border bg-card px-4 py-3 text-left shadow-sm"
                 >
-                  {item.label}
-                </a>
+                  <a
+                    href={`#${chapter.sections[0].id}`}
+                    className="flex items-center gap-2 text-sm font-medium text-foreground transition-colors hover:text-link"
+                  >
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] text-primary-foreground">
+                      {chapter.numeral}
+                    </span>
+                    {chapter.title}
+                  </a>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {chapter.lead}
+                  </p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {chapter.sections.map((section) => (
+                      <a
+                        key={section.id}
+                        href={`#${section.id}`}
+                        className="text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-link hover:underline"
+                      >
+                        {section.short}
+                      </a>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -413,7 +530,15 @@ export default function App() {
         <Separator className="my-10" />
 
         <div className={view === "story" ? "contents" : "hidden"}>
-        <section id="why" className="scroll-mt-16 flex flex-col gap-6">
+        <ChapterHeader
+          id="chapter-method"
+          numeral="1"
+          title="评测台怎么测"
+          lead="先把不花钱、不看运气的那一层做扎实，再谈生成质量：检索层决定模型能看到什么，生成层决定看到之后答得怎么样。"
+          first
+        />
+
+        <section id="why" className="scroll-mt-16 mt-8 flex flex-col gap-6">
           <SectionTitle id="why">为什么要先测检索层</SectionTitle>
           <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
             很多 Copilot 的演示停在「它答对了」。但答对的背后可能是运气：一次瞎猫撞上死耗子，
@@ -447,7 +572,7 @@ export default function App() {
           </div>
         </section>
 
-        <section id="experiment" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+        <section id="experiment" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <SectionTitle id="experiment">切分策略对比实验</SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -532,7 +657,7 @@ export default function App() {
         {hasGeneration && (
           <section
             id="generation"
-            className="scroll-mt-16 mt-16 flex flex-col gap-6"
+            className="scroll-mt-16 mt-12 flex flex-col gap-6"
           >
             <div className="flex flex-col gap-2">
               <SectionTitle id="generation">生成层结果</SectionTitle>
@@ -543,7 +668,7 @@ export default function App() {
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {generationStrategies.map((metrics) => (
                 <Card key={metrics.strategy.id}>
                   <CardHeader>
@@ -556,20 +681,24 @@ export default function App() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">成功率</span>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                        成功率
+                      </span>
                       <span className="font-mono text-2xl font-semibold tabular-nums">
                         {formatPercent(metrics.successRate ?? 0)}
                       </span>
                     </div>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">平均 judge 分</span>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                        平均 judge 分
+                      </span>
                       <span className="font-mono text-sm tabular-nums">
                         {(metrics.avgJudgeScore ?? 0).toFixed(2)}
                       </span>
                     </div>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                         平均 / P95 延迟
                       </span>
                       <span className="font-mono text-sm tabular-nums">
@@ -577,8 +706,8 @@ export default function App() {
                         {formatNumber(metrics.p95LatencyMs ?? 0)} ms
                       </span>
                     </div>
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-xs text-muted-foreground">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                         总成本 / 总 token
                       </span>
                       <span className="font-mono text-sm tabular-nums">
@@ -642,50 +771,59 @@ export default function App() {
                     </dd>
                   </div>
                 </dl>
-                <div className="mt-4 overflow-x-auto">
-                  <table className="eval-table w-full min-w-[640px] text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-xs text-muted-foreground">
-                        <th className="py-2 pr-3 font-medium">策略</th>
-                        <th className="py-2 pr-3 font-medium">runId</th>
-                        <th className="py-2 pr-3 font-medium">开始</th>
-                        <th className="py-2 pr-3 font-medium">结束</th>
-                        <th className="py-2 pr-3 text-right font-medium">用时</th>
-                        <th className="py-2 text-right font-medium">成本</th>
-                      </tr>
-                    </thead>
-                    <tbody className="font-mono tabular-nums">
-                      {runs.map((run) => {
-                        const elapsedMs =
-                          new Date(run.finishedAt).getTime() -
-                          new Date(run.startedAt).getTime();
-                        return (
-                          <tr key={run.runId} className="border-b last:border-0">
-                            <td className="py-2 pr-3 font-sans">
-                              {run.chunking.label}
-                            </td>
-                            <td className="py-2 pr-3 text-xs">
-                              {run.runId}
-                            </td>
-                            <td className="py-2 pr-3 text-xs">
-                              {formatRunTime(run.startedAt)}
-                            </td>
-                            <td className="py-2 pr-3 text-xs">
-                              {formatRunTime(run.finishedAt)}
-                            </td>
-                            <td className="py-2 pr-3 text-right">
-                              {formatNumber(elapsedMs / 1000)} s
-                            </td>
-                            <td className="py-2 text-right">
-                              {report.costCurrency}
-                              {run.summary.totalCost.toFixed(4)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <details className="group mt-4 rounded-lg border bg-card">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground">
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                    逐次运行记录（{runs.length} 次）
+                    <span className="text-xs font-normal text-muted-foreground">
+                      runId · 起止时间 · 单次成本
+                    </span>
+                  </summary>
+                  <div className="overflow-x-auto px-4 pb-4">
+                    <table className="eval-table w-full min-w-[640px] text-sm">
+                      <thead>
+                        <tr className="border-b text-left text-xs text-muted-foreground">
+                          <th className="py-2 pr-3 font-medium">策略</th>
+                          <th className="py-2 pr-3 font-medium">runId</th>
+                          <th className="py-2 pr-3 font-medium">开始</th>
+                          <th className="py-2 pr-3 font-medium">结束</th>
+                          <th className="py-2 pr-3 text-right font-medium">用时</th>
+                          <th className="py-2 text-right font-medium">成本</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono tabular-nums">
+                        {runs.map((run) => {
+                          const elapsedMs =
+                            new Date(run.finishedAt).getTime() -
+                            new Date(run.startedAt).getTime();
+                          return (
+                            <tr key={run.runId} className="border-b last:border-0">
+                              <td className="py-2 pr-3 font-sans">
+                                {run.chunking.label}
+                              </td>
+                              <td className="py-2 pr-3 text-xs">
+                                {run.runId}
+                              </td>
+                              <td className="py-2 pr-3 text-xs">
+                                {formatRunTime(run.startedAt)}
+                              </td>
+                              <td className="py-2 pr-3 text-xs">
+                                {formatRunTime(run.finishedAt)}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
+                                {formatNumber(elapsedMs / 1000)} s
+                              </td>
+                              <td className="py-2 text-right">
+                                {report.costCurrency}
+                                {run.summary.totalCost.toFixed(4)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <CostBreakdownPopover />
                   <span className="text-xs text-muted-foreground">
@@ -818,8 +956,15 @@ export default function App() {
           </section>
         )}
 
+        <ChapterHeader
+          id="chapter-result"
+          numeral="2"
+          title="结论有多硬"
+          lead="把「这一版比那一版好」拆成可以归因的每一步，再回头问一次：给出这个结论的那把尺子，本身可不可信。"
+        />
+
         {report.baseline && (
-          <section id="baseline" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+          <section id="baseline" className="scroll-mt-16 mt-10 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <SectionTitle id="baseline">优化前后</SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -837,7 +982,7 @@ export default function App() {
         )}
 
         {ladder.length > 0 && (
-          <section id="ladder" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+          <section id="ladder" className="scroll-mt-16 mt-12 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <SectionTitle id="ladder">工具迭代史</SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -890,7 +1035,7 @@ export default function App() {
         )}
 
         {modelComparison && (
-          <section id="models" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+          <section id="models" className="scroll-mt-16 mt-12 flex flex-col gap-6">
             <div className="flex flex-col gap-2">
               <SectionTitle id="models">多模型对比：这把尺子分不分得出好坏</SectionTitle>
               <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -913,7 +1058,14 @@ export default function App() {
           </section>
         )}
 
-        <section id="questions" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+        <ChapterHeader
+          id="chapter-evidence"
+          numeral="3"
+          title="证据与复现"
+          lead="每一个数字都能被打开看，也能被重新算一遍：逐题证据、失败分类、judge 自检，和一条命令就能跑的复现流水线。"
+        />
+
+        <section id="questions" className="scroll-mt-16 mt-10 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <SectionTitle id="questions">逐题检索台</SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -924,7 +1076,7 @@ export default function App() {
           <QuestionExplorer />
         </section>
 
-        <section id="failures" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+        <section id="failures" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <SectionTitle id="failures">失败归因</SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -979,7 +1131,7 @@ export default function App() {
           </p>
         </section>
 
-        <section id="trust" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+        <section id="trust" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <div className="flex flex-col gap-2">
             <SectionTitle id="trust">信任基础：judge 自己够不够准</SectionTitle>
             <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
@@ -1111,7 +1263,7 @@ export default function App() {
           )}
         </section>
 
-        <section id="repro" className="scroll-mt-16 mt-16 flex flex-col gap-6">
+        <section id="repro" className="scroll-mt-16 mt-12 flex flex-col gap-6">
           <SectionTitle id="repro">怎么复现</SectionTitle>
 
           <Card>

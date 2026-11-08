@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import type { ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 
 import {
   ChartContainer,
@@ -416,8 +417,16 @@ function FlipAnalysis() {
         </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] border-separate border-spacing-0.5 text-sm">
+      <details className="group rounded-lg border bg-card">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-foreground">
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+          逐题翻转矩阵（{rows.length} 题 × {ladder.length} 轮）
+          <span className="text-xs font-normal text-muted-foreground">
+            哪道题在第几轮被修好
+          </span>
+        </summary>
+        <div className="overflow-x-auto px-4 pb-4">
+          <table className="w-full min-w-[560px] border-separate border-spacing-0.5 text-sm">
           <thead>
             <tr>
               <th className="w-16 pb-2 text-left text-xs font-medium text-muted-foreground">
@@ -478,7 +487,8 @@ function FlipAnalysis() {
             </tr>
           </tfoot>
         </table>
-      </div>
+        </div>
+      </details>
 
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-chart-2/25 px-2.5 py-0.5 font-medium text-chart-2">
