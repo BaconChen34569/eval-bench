@@ -21,3 +21,6 @@ corpus/tmp/
 
 # 本地临时目录（临时截图、推送中间产物）
 tmp/
+
+# Qoder 会话导出：含真实 API Key，只留本地
+*Qoder*_*.md
