@@ -451,7 +451,7 @@ export function DataView() {
                     <th className="py-2 pr-3 font-medium">两把尺子</th>
                     <th className="py-2 pr-3 text-right font-medium">一致率</th>
                     <th className="py-2 pr-3 text-right font-medium">完全同分</th>
-                    <th className="py-2 text-right font-medium">翻转题数</th>
+                    <th className="py-2 text-right font-medium">翻转判定数</th>
                   </tr>
                 </thead>
                 <tbody className="font-mono tabular-nums">
