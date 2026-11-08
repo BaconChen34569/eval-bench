@@ -454,11 +454,19 @@ export function ModelComparisonSection() {
           <div className="max-h-[360px] overflow-auto">
             <table className="eval-table w-full min-w-[520px] text-sm">
               <thead>
+                {/* 列表要滚动，表头钉在顶部，读者才知道这一列是哪把尺子。 */}
                 <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">被测模型</th>
-                  <th className="py-2 pr-3 font-medium">题目</th>
+                  <th className="sticky top-0 z-10 py-2 pr-3 font-medium">
+                    被测模型
+                  </th>
+                  <th className="sticky top-0 z-10 py-2 pr-3 font-medium">
+                    题目
+                  </th>
                   {judges.map((judge) => (
-                    <th key={judge.model} className="py-2 pr-3 text-right font-medium">
+                    <th
+                      key={judge.model}
+                      className="sticky top-0 z-10 py-2 pr-3 text-right font-medium"
+                    >
                       {judge.label}
                     </th>
                   ))}
