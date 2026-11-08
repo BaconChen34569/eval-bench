@@ -76,6 +76,34 @@ export function ModelComparisonSection() {
       : 0;
   const rulerGap = worstPair ? (1 - worstPair.agreement) * 100 : 0;
 
+  // 每把尺子下的分差：差距被尺子压扁，说明这把尺子不区分模型
+  const spreadUnder = (index: number) => {
+    const values = rows.map((row) => cellOf(row, index)?.successRate ?? 0);
+    return (Math.max(...values) - Math.min(...values)) * 100;
+  };
+  const primarySpread = spreadUnder(primaryIndex);
+  const flattened = judges
+    .map((judge, index) => {
+      const top = Math.max(
+        ...rows.map((row) => cellOf(row, index)?.successRate ?? 0),
+      );
+      const tied = rows.filter(
+        (row) => (cellOf(row, index)?.successRate ?? 0) === top,
+      );
+      return { judge, index, top, tied };
+    })
+    .filter(
+      (item) =>
+        item.index !== primaryIndex && spreadUnder(item.index) < primarySpread,
+    )
+    .map((item) =>
+      item.tied.length === rows.length
+        ? `${item.judge.label} 尺子下三个模型全部并列 ${formatPercent(item.top)}`
+        : `${item.judge.label} 尺子下 ${item.tied
+            .map((row) => row.agentProfileLabel)
+            .join("、")} 并列 ${formatPercent(item.top)}`,
+    );
+
   // 自评偏袒最明显的一把尺子
   const mostBiased = [...selfPreference].sort(
     (a, b) => Math.abs(b.gap) - Math.abs(a.gap),
@@ -157,19 +185,25 @@ export function ModelComparisonSection() {
                 <>
                   ——它（
                   {rulerGap.toFixed(1)}
-                  个百分点）比模型之间的差距（
-                  {modelGap.toFixed(1)}
-                  个百分点）还大，所以只报一把尺子的排名没有意义。
+                  个百分点）比第一名和第二名之间的{" "}
+                  {modelGap.toFixed(1)} 个百分点还大（还没盖过第一名和最后一名之间{" "}
+                  {primarySpread.toFixed(1)} 个百分点的总差距）。也就是说：模型之间
+                  的总差距是真的，但相邻名次之间的差距比尺子本身的误差还小
                 </>
               ) : (
                 <>
                   ——它（
                   {rulerGap.toFixed(1)}
-                  个百分点）还没盖过模型之间的差距（
-                  {modelGap.toFixed(1)}
-                  个百分点），但换一把尺子仍然可能改写名次，所以排名要连着一致率一起看。
+                  个百分点）还没超过第一名和第二名之间的{" "}
+                  {modelGap.toFixed(1)} 个百分点，但换一把尺子仍然可能改写名次
                 </>
               )}
+              {flattened.length > 0 ? (
+                <>
+                  ，一换尺子就可能被抹平：{flattened.join("；")}
+                </>
+              ) : null}
+              ，所以排名要连着一致率一起看。
             </>
           ) : null}
         </p>

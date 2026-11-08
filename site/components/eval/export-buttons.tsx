@@ -227,7 +227,7 @@ export function buildModelComparisonCsv(): string {
     .join("\n");
 }
 
-/** 尺子之间的一致率：换一把尺子，排名会不会翻。 */
+/** 尺子之间的一致率：换一把尺子，名次之间的差距会不会被抹平。 */
 export function buildJudgeAgreementCsv(): string {
   if (!modelComparison) return "";
   const header = [
