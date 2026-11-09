@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { ClipboardCopy, Download, Loader2, TriangleAlert } from "lucide-react";
+import {
+  ClipboardCopy,
+  Download,
+  FolderOpen,
+  Loader2,
+  Play,
+  Save,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
 
 import {
   Alert,
@@ -39,6 +48,7 @@ import {
   type WorkDataset,
 } from "@/src/workbench/api";
 import { copyText, downloadText } from "@/src/workbench/clipboard";
+import { DirPicker } from "@/src/workbench/dir-picker";
 import { parseQuestionsFile } from "@/src/workbench/question-import";
 import { QuestionEditor } from "@/src/workbench/question-editor";
 
@@ -81,6 +91,7 @@ export function DatasetPanel({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sourceFile, setSourceFile] = useState("");
   const [sourceId, setSourceId] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -258,14 +269,26 @@ export function DatasetPanel({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <Input
-            value={repoRoot}
-            onChange={(event) => setRepoRoot(event.target.value)}
-            placeholder="D:\\qcode\\creativity_race\\corpus\\repos\\flask-3.1.3"
-            className="font-mono text-xs"
-          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              value={repoRoot}
+              onChange={(event) => setRepoRoot(event.target.value)}
+              placeholder={health?.defaultRepoRoot ?? "被测仓库的根目录"}
+              className="font-mono text-xs"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setPickerOpen(true)}
+            >
+              <FolderOpen className="mr-1 size-4" />
+              选择目录
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
-            留空就用服务启动时的默认仓库。路径写错了校验会直接报文件不存在。
+            「选择目录」可以逐级点进去挑，不用手打绝对路径；直接粘路径也行。
+            留空就用服务启动时的默认仓库。
           </p>
         </CardContent>
       </Card>
@@ -278,65 +301,71 @@ export function DatasetPanel({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <NativeSelect
-              value={selectedId}
-              onChange={(event) => void loadDataset(event.target.value)}
-              className="w-full sm:w-64"
-            >
-              <NativeSelectOption value="">（选择题集）</NativeSelectOption>
-              {(health?.datasets ?? []).map((item) => (
-                <NativeSelectOption key={item.id} value={item.id}>
-                  {item.id} · {item.questions} 题
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setDataset(blankDataset());
-                setSelectedId("");
-                setSourceFile("");
-                setSourceId("");
-                setValidation(null);
-                setMessage("新建了一套空题集，先加题");
-              }}
-            >
-              新建题集
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => fileRef.current?.click()}
-            >
-              从文件载入
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={(event) => void onFile(event.target.files?.[0])}
-            />
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!dataset}
-              onClick={() => void copyDataset()}
-            >
-              <ClipboardCopy className="mr-1 size-4" />
-              复制题集 JSON
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!dataset}
-              onClick={downloadDataset}
-            >
-              <Download className="mr-1 size-4" />
-              下载题集
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <NativeSelect
+                value={selectedId}
+                onChange={(event) => void loadDataset(event.target.value)}
+                className="w-full sm:w-64"
+              >
+                <NativeSelectOption value="">（选择题集）</NativeSelectOption>
+                {(health?.datasets ?? []).map((item) => (
+                  <NativeSelectOption key={item.id} value={item.id}>
+                    {item.id} · {item.questions} 题
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setDataset(blankDataset());
+                  setSelectedId("");
+                  setSourceFile("");
+                  setSourceId("");
+                  setValidation(null);
+                  setMessage("新建了一套空题集，先加题");
+                }}
+              >
+                新建题集
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileRef.current?.click()}
+              >
+                从文件载入
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) => void onFile(event.target.files?.[0])}
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                disabled={!dataset}
+                title="复制题集 JSON"
+                onClick={() => void copyDataset()}
+              >
+                <ClipboardCopy className="size-4" />
+                <span className="sr-only">复制题集 JSON</span>
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                disabled={!dataset}
+                title="下载题集"
+                onClick={downloadDataset}
+              >
+                <Download className="size-4" />
+                <span className="sr-only">下载题集</span>
+              </Button>
+            </div>
           </div>
 
           {!dataset && (
@@ -410,39 +439,71 @@ export function DatasetPanel({
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy !== "" || !dataset}
-              onClick={() => void validate()}
-            >
-              {busy === "validate" && (
-                <Loader2 className="mr-1 size-4 animate-spin" />
-              )}
-              校验证据
-            </Button>
-            <Button
-              size="sm"
-              disabled={busy !== "" || !dataset}
-              onClick={() => void evaluate()}
-            >
-              {busy === "evaluate" && (
-                <Loader2 className="mr-1 size-4 animate-spin" />
-              )}
-              跑检索评测
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy !== "" || !dataset}
-              onClick={save}
-            >
-              {busy === "save" && (
-                <Loader2 className="mr-1 size-4 animate-spin" />
-              )}
-              保存到 harness/datasets
-            </Button>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="flex flex-col gap-2 rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium">1 · 校验证据</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                每条证据的文件和行号对不对。题刚录完先跑这一步。
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-auto"
+                disabled={busy !== "" || !dataset}
+                onClick={() => void validate()}
+              >
+                {busy === "validate" && (
+                  <Loader2 className="mr-1 size-4 animate-spin" />
+                )}
+                校验证据
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <div className="flex items-center gap-2">
+                <Play className="size-4" />
+                <span className="text-sm font-medium">2 · 跑检索评测</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                算三种切分策略的召回率，跑完自动滚到下面的图表。
+              </p>
+              <Button
+                size="sm"
+                className="mt-auto"
+                disabled={busy !== "" || !dataset}
+                onClick={() => void evaluate()}
+              >
+                {busy === "evaluate" && (
+                  <Loader2 className="mr-1 size-4 animate-spin" />
+                )}
+                跑检索评测
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-2 rounded-lg border p-3">
+              <div className="flex items-center gap-2">
+                <Save className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium">3 · 保存题集</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                写回 harness/datasets，同名文件会被整个换掉。
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-auto"
+                disabled={busy !== "" || !dataset}
+                onClick={save}
+              >
+                {busy === "save" && (
+                  <Loader2 className="mr-1 size-4 animate-spin" />
+                )}
+                保存到 harness/datasets
+              </Button>
+            </div>
           </div>
 
           {!dataset && (
@@ -521,6 +582,16 @@ export function DatasetPanel({
           )}
         </CardContent>
       </Card>
+
+      <DirPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        initialPath={repoRoot || health?.defaultRepoRoot || ""}
+        onPick={(path) => {
+          setRepoRoot(path);
+          setMessage(`被测仓库已改成 ${path}`);
+        }}
+      />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>

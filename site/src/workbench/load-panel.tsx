@@ -160,67 +160,52 @@ export function LoadPanel({
       <CardHeader>
         <CardTitle className="text-base">填数据出图</CardTitle>
         <CardDescription>
-          评测台跑出来的报告在产物目录里。直接载入下面的文件，或者把 JSON
-          粘进来——粘进来的会自动排版好。
+          先从产物目录载入评测台跑出来的报告；也可以从别处拿一份 JSON 粘进来，
+          粘进去会自动排好版。
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            disabled={!current || busy !== ""}
-            onClick={() => current && void loadFromDisk(current)}
-          >
-            {busy === "report.json" ? (
-              <Loader2 className="mr-1 size-4 animate-spin" />
-            ) : (
-              <FolderOpen className="mr-1 size-4" />
-            )}
-            载入 report.json
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy !== ""}
-            onClick={() => void refreshFiles()}
-          >
-            {busy === "list" ? (
-              <Loader2 className="mr-1 size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1 size-4" />
-            )}
-            刷新产物
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => fileRef.current?.click()}
-          >
-            <FileUp className="mr-1 size-4" />
-            选文件
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            className="hidden"
-            onChange={(event) => void onFile(event.target.files?.[0])}
-          />
-        </div>
+      <CardContent className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              disabled={!current || busy !== ""}
+              onClick={() => current && void loadFromDisk(current)}
+            >
+              {busy === "report.json" ? (
+                <Loader2 className="mr-1 size-4 animate-spin" />
+              ) : (
+                <FolderOpen className="mr-1 size-4" />
+              )}
+              载入 report.json
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              disabled={busy !== ""}
+              title="刷新产物列表"
+              onClick={() => void refreshFiles()}
+            >
+              {busy === "list" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="size-4" />
+              )}
+              <span className="sr-only">刷新产物</span>
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {current
+                ? `当前报告 ${formatSize(current.size)} · 改于 ${formatTime(current.mtime)}`
+                : "这里还没有 report.json"}
+            </span>
+          </div>
 
-        {outDir && (
-          <p className="text-xs text-muted-foreground">
-            产物目录：<code className="font-mono">{outDir}</code>
-            {current ? (
-              <>
-                ，当前报告 {formatSize(current.size)}，改于{" "}
-                {formatTime(current.mtime)}
-              </>
-            ) : (
-              "，这里还没有 report.json——先在命令行跑一次评测"
-            )}
-          </p>
-        )}
+          {outDir && (
+            <p className="text-xs text-muted-foreground">
+              产物目录：<code className="font-mono">{outDir}</code>
+            </p>
+          )}
+        </div>
 
         {reports.length > 0 && (
           <details className="rounded-lg border bg-card">
@@ -273,7 +258,32 @@ export function LoadPanel({
           </details>
         )}
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">手动粘一份 JSON</p>
+              <p className="text-xs text-muted-foreground">
+                从别处拿到的报告（比如同事发过来的）粘进来，粘进去就自动排好版。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileRef.current?.click()}
+              >
+                <FileUp className="mr-1 size-4" />
+                选文件
+              </Button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) => void onFile(event.target.files?.[0])}
+              />
+            </div>
+          </div>
           <Textarea
             value={text}
             onChange={(event) => setText(event.target.value)}

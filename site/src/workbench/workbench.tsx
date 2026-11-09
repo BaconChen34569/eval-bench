@@ -11,6 +11,7 @@ import { api, type Health } from "@/src/workbench/api";
 import { DatasetPanel } from "@/src/workbench/dataset-panel";
 import { LoadPanel } from "@/src/workbench/load-panel";
 import { ReportPanel } from "@/src/workbench/report-panel";
+import { SecretsPanel } from "@/src/workbench/secrets-panel";
 
 /**
  * 本地工作台。
@@ -100,6 +101,7 @@ node --experimental-strip-types src/cli.ts serve`}
           <TabsList>
             <TabsTrigger value="load">填数据出图</TabsTrigger>
             <TabsTrigger value="dataset">录题集跑评测</TabsTrigger>
+            <TabsTrigger value="secrets">模型密钥</TabsTrigger>
           </TabsList>
 
           <TabsContent value="load" className="flex flex-col gap-4">
@@ -112,6 +114,10 @@ node --experimental-strip-types src/cli.ts serve`}
               onReport={applyReport}
               onHealthChange={setHealth}
             />
+          </TabsContent>
+
+          <TabsContent value="secrets" className="flex flex-col gap-4">
+            <SecretsPanel />
           </TabsContent>
         </Tabs>
 

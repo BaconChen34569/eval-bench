@@ -15,13 +15,15 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile, readdir, writeFile, mkdir, stat } from "node:fs/promises";
-import { extname, join, resolve, sep } from "node:path";
+import { readFile, readdir, writeFile, mkdir, stat, chmod } from "node:fs/promises";
+import { extname, join, resolve, sep, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateDataset } from "./dataset-validate.ts";
 import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION } from "./schema.ts";
+import { buildLlmConfig, listModels } from "./llm.ts";
+import { discoverProfiles } from "./profiles.ts";
 import type { EvalDataset } from "./schema.ts";
 
 const MIME: Record<string, string> = {
@@ -290,6 +292,329 @@ async function readReport(name: string): Promise<unknown> {
   return JSON.parse(content);
 }
 
+/**
+ * 只接受本机同源的请求。
+ *
+ * 服务只监听 127.0.0.1，但浏览器里的任何网页都能往这个地址发请求：
+ * 没有这道校验，用户开着工作台时随手点开一个恶意网页，
+ * 它就能往 harness/.env 里塞东西，或者把磁盘目录列出来。
+ * 所以看 Host 和 Origin：不是本机的一律拒绝。
+ */
+function isLocalRequest(req: IncomingMessage): boolean {
+  const allowed = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/;
+  const host = (req.headers.host ?? "").toLowerCase();
+  if (!allowed.test(host)) return false;
+
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return allowed.test(new URL(origin).host.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export interface DirEntry {
+  name: string;
+  path: string;
+  /** 看着像个代码仓库（有 .git 或 pyproject.toml / setup.py） */
+  looksLikeRepo: boolean;
+}
+
+export interface DirListing {
+  /** 当前浏览的目录 */
+  path: string;
+  /** 上一级，没有就是 null（已经在盘根） */
+  parent: string | null;
+  /** 只有子目录，文件不列出来 */
+  entries: DirEntry[];
+  /** 盘符（Windows）或空 */
+  drives: string[];
+  /** 用户主目录 */
+  home: string;
+  /** 快捷入口：默认仓库和语料目录 */
+  hints: { defaultRepoRoot: string; corpusRepos: string };
+}
+
+/** 仓库根目录常见的标志文件。 */
+const REPO_MARKERS = [".git", "pyproject.toml", "setup.py", "package.json"];
+
+async function looksLikeRepo(path: string): Promise<boolean> {
+  for (const marker of REPO_MARKERS) {
+    try {
+      await stat(join(path, marker));
+      return true;
+    } catch {
+      // 没有这个标志，继续看下一个
+    }
+  }
+  return false;
+}
+
+async function listDrives(): Promise<string[]> {
+  if (process.platform !== "win32") return [];
+  const found: string[] = [];
+  for (const letter of "CDEFGHIJKLMNOPQRSTUVWXYZAB") {
+    const root = `${letter}:\\`;
+    try {
+      const info = await stat(root);
+      if (info.isDirectory()) found.push(root);
+    } catch {
+      // 没插这个盘
+    }
+  }
+  return found;
+}
+
+/**
+ * 列一个目录下的子目录。
+ *
+ * 只列目录，不列文件，也不读文件内容：
+ * 这一层要做的只是让用户挑一个仓库根目录。
+ */
+async function listDirectories(
+  target: string,
+  hints: { defaultRepoRoot: string; corpusRepos: string },
+): Promise<DirListing> {
+  const path = resolve(target);
+  const info = await stat(path);
+  if (!info.isDirectory()) {
+    throw new Error(`${path} 不是一个目录`);
+  }
+
+  const names = await readdir(path);
+  const entries: DirEntry[] = [];
+  // 目录太深太多时只列前面一部分，免得页面被几千个条目淹了。
+  for (const name of names.sort().slice(0, 500)) {
+    const child = join(path, name);
+    let isDir = false;
+    try {
+      const childInfo = await stat(child);
+      isDir = childInfo.isDirectory();
+    } catch {
+      // 断链或者权限不够，跳过
+    }
+    if (!isDir) continue;
+    entries.push({
+      name,
+      path: child,
+      looksLikeRepo: await looksLikeRepo(child),
+    });
+  }
+
+  const parent = dirname(path);
+  return {
+    path,
+    parent: parent === path ? null : parent,
+    entries,
+    drives: await listDrives(),
+    home: process.env.HOME ?? process.env.USERPROFILE ?? path,
+    hints,
+  };
+}
+
+/**
+ * 密钥文件位置。
+ *
+ * 用当前工作目录，和命令行读 .env 的方式保持一致：
+ * 命令行在哪个目录跑，就读哪个目录的 .env。
+ */
+export const ENV_PATH = join(process.cwd(), ".env");
+
+/** 页面能写的字段：驼峰名字 → .env 里的变量后缀。 */
+const WRITABLE_FIELDS = [
+  { key: "apiKey", field: "API_KEY" },
+  { key: "baseUrl", field: "BASE_URL" },
+  { key: "model", field: "MODEL" },
+  { key: "label", field: "LABEL" },
+] as const;
+type WritableField = (typeof WRITABLE_FIELDS)[number]["field"];
+
+/** 档案前缀：只允许大写字母、数字和下划线。 */
+const PREFIX_PATTERN = /^[A-Z][A-Z0-9_]{0,15}$/;
+
+function parseEnvFile(text: string): Map<string, string> {
+  const values = new Map<string, string>();
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const split = trimmed.indexOf("=");
+    if (split <= 0) continue;
+    const key = trimmed.slice(0, split).trim();
+    let value = trimmed.slice(split + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    values.set(key, value);
+  }
+  return values;
+}
+
+function envRecord(values: Map<string, string>): Record<string, string> {
+  return Object.fromEntries(values);
+}
+
+/** 写回 .env 用的值格式：有空格或 # 就加引号，免得被当成注释。 */
+function formatEnvValue(value: string): string {
+  if (value === "") return "";
+  if (!/[\s#"']/.test(value)) return value;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+export interface SecretProfileStatus {
+  id: string;
+  prefix: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+  /** 三个必填字段都齐了 */
+  configured: boolean;
+  /** 还缺哪些字段（只列字段名，不含值） */
+  missing: string[];
+}
+
+export interface SecretStatus {
+  envPath: string;
+  exists: boolean;
+  profiles: SecretProfileStatus[];
+}
+
+async function readEnvText(): Promise<string> {
+  try {
+    return await readFile(ENV_PATH, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 读 .env 里的档案状态。
+ *
+ * 只回传「有没有配、缺哪几个字段、接口和模型是什么」，
+ * 密钥本身一个字节都不往外送：页面不需要知道它，浏览器更不该拿到它。
+ */
+async function secretStatus(): Promise<SecretStatus> {
+  const text = await readEnvText();
+  const values = parseEnvFile(text);
+  const profiles = discoverProfiles(envRecord(values)).map((profile) => ({
+    id: profile.id,
+    prefix: profile.prefix,
+    label: profile.label,
+    baseUrl: profile.baseUrl,
+    model: profile.model,
+    configured: profile.missing.length === 0 && Boolean(profile.config),
+    missing: profile.missing,
+  }));
+  return {
+    envPath: ENV_PATH,
+    exists: values.size > 0,
+    profiles,
+  };
+}
+
+/** 把一组字段写进 .env，保留原有的注释和顺序。 */
+async function writeEnvValues(
+  updates: { prefix: string; field: WritableField; value: string }[],
+): Promise<void> {
+  let text = await readEnvText();
+  if (!text.trim()) {
+    // 没有 .env 就拿模板起一份：用户填完密钥，其他家服务商也在里面。
+    try {
+      text = await readFile(join(HARNESS_ROOT, ".env.example"), "utf8");
+    } catch {
+      text = "";
+    }
+  }
+
+  const lines = text.split(/\r?\n/);
+  for (const update of updates) {
+    const key = `${update.prefix}_${update.field}`;
+    const line = `${key}=${formatEnvValue(update.value)}`;
+    const index = lines.findIndex(
+      (item) => item.trim().split("=")[0].trim() === key,
+    );
+    if (index >= 0) lines[index] = line;
+    else lines.push(line);
+  }
+
+  await mkdir(dirname(ENV_PATH), { recursive: true });
+  await writeFile(ENV_PATH, `${lines.join("\n").replace(/\n+$/, "")}\n`, "utf8");
+  // .env 里是明文密钥，权限收到只有自己能读（Windows 上这步无效，NTFS 另说）。
+  try {
+    await chmod(ENV_PATH, 0o600);
+  } catch {
+    // 权限改不了就算了，不影响功能
+  }
+}
+
+/**
+ * 校验一个档案前缀和它要写的字段。
+ *
+ * 值里不许有换行：换行能往 .env 里塞进额外的内容，
+ * 那就等于允许页面往用户的 .env 里写任意东西。
+ */
+function parseSecretPayload(body: unknown): {
+  prefix: string;
+  updates: { prefix: string; field: WritableField; value: string }[];
+  testKey?: string;
+} {
+  const input = (body ?? {}) as Record<string, unknown>;
+  const prefix = String(input.prefix ?? "").trim().toUpperCase();
+  if (!PREFIX_PATTERN.test(prefix)) {
+    throw new Error("档案前缀不合法：只能用大写字母、数字和下划线");
+  }
+
+  const updates: { prefix: string; field: WritableField; value: string }[] = [];
+  for (const { key, field } of WRITABLE_FIELDS) {
+    if (!(key in input)) continue;
+    const value = String(input[key] ?? "");
+    if (/[\r\n]/.test(value)) {
+      throw new Error(`${key} 里不能有换行`);
+    }
+    if (value.length > 512) {
+      throw new Error(`${key} 太长了`);
+    }
+    updates.push({ prefix, field, value: value.trim() });
+  }
+
+  const testKey = typeof input.testKey === "string" ? input.testKey.trim() : "";
+  return { prefix, updates, testKey: testKey || undefined };
+}
+
+/**
+ * 用档案里的密钥问一次服务端的模型列表，验证这个 key 通不通。
+ *
+ * testKey 可以带一个还没保存的 key 进来试：只用这一次，不写盘、不回显。
+ */
+async function testSecret(
+  prefix: string,
+  testKey?: string,
+): Promise<{ ok: boolean; models: string[]; error?: string }> {
+  const values = envRecord(parseEnvFile(await readEnvText()));
+  if (testKey) values[`${prefix}_API_KEY`] = testKey;
+  const config = buildLlmConfig(values, prefix);
+  if (!config.baseUrl) {
+    return { ok: false, models: [], error: "还没填接口地址" };
+  }
+  if (!config.apiKey) {
+    return { ok: false, models: [], error: "还没填密钥" };
+  }
+  try {
+    const models = await listModels(config);
+    return { ok: true, models };
+  } catch (error) {
+    return {
+      ok: false,
+      models: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function serve(options: ServeOptions): Promise<void> {
   const { workbenchRoot, storyRoot, datasetsRoot, defaultRepoRoot } = options;
 
@@ -298,14 +623,74 @@ export async function serve(options: ServeOptions): Promise<void> {
     const path = url.pathname;
 
     try {
+      // 只接本机同源的请求：工作台开着的时候，用户点开的别的网页
+      // 不该能通过浏览器改写 .env 或列磁盘目录。
+      if (path.startsWith("/api/") && !isLocalRequest(req)) {
+        sendJson(res, 403, { error: "只接受本机工作台的请求" });
+        return;
+      }
+
       if (path === "/api/health") {
         sendJson(res, 200, {
           mode: "local",
           codeVersion: CODE_VERSION,
           defaultRepoRoot,
           outDir: OUT_DIR,
+          envPath: ENV_PATH,
           datasets: await listDatasets(datasetsRoot),
         });
+        return;
+      }
+
+      if (path === "/api/dirs" && req.method === "GET") {
+        const target = url.searchParams.get("path")?.trim() || defaultRepoRoot;
+        const listing = await listDirectories(target, {
+          defaultRepoRoot,
+          corpusRepos: resolve(HARNESS_ROOT, "..", "corpus", "repos"),
+        });
+        sendJson(res, 200, listing);
+        return;
+      }
+
+      if (path === "/api/secrets" && req.method === "GET") {
+        sendJson(res, 200, await secretStatus());
+        return;
+      }
+
+      if (path === "/api/secrets" && req.method === "POST") {
+        const body = await readBody(req);
+        const { prefix, updates } = parseSecretPayload(body);
+        if (!updates.length) throw new Error("没有要保存的内容");
+        const keyUpdate = updates.find((item) => item.field === "API_KEY");
+        if (keyUpdate && !keyUpdate.value) {
+          throw new Error("密钥不能是空的");
+        }
+        await writeEnvValues(updates);
+        sendJson(res, 200, {
+          ok: true,
+          envPath: ENV_PATH,
+          status: await secretStatus(),
+        });
+        return;
+      }
+
+      if (path === "/api/secrets" && req.method === "DELETE") {
+        const body = (await readBody(req)) as { prefix?: string };
+        const prefix = String(body.prefix ?? "").trim().toUpperCase();
+        if (!PREFIX_PATTERN.test(prefix)) throw new Error("档案前缀不合法");
+        await writeEnvValues([{ prefix, field: "API_KEY", value: "" }]);
+        sendJson(res, 200, {
+          ok: true,
+          envPath: ENV_PATH,
+          status: await secretStatus(),
+        });
+        return;
+      }
+
+      if (path === "/api/secrets/test" && req.method === "POST") {
+        const body = await readBody(req);
+        const { prefix, testKey } = parseSecretPayload(body);
+        sendJson(res, 200, await testSecret(prefix, testKey));
         return;
       }
 

@@ -30,6 +30,8 @@ export interface Health {
   defaultRepoRoot: string;
   /** 评测产物目录，命令行跑出来的 report.json 就在这儿 */
   outDir: string;
+  /** 密钥文件位置 */
+  envPath: string;
   datasets: DatasetSummary[];
 }
 
@@ -55,6 +57,51 @@ export interface ValidateResult {
   problems: string[];
   warnings: string[];
   repoRoot: string;
+}
+
+/** 目录下的一个子目录。 */
+export interface DirEntry {
+  name: string;
+  path: string;
+  /** 看着像个代码仓库（有 .git 或 pyproject.toml / setup.py） */
+  looksLikeRepo: boolean;
+}
+
+/** 一次目录浏览的结果。 */
+export interface DirListing {
+  path: string;
+  /** 上一级，没有就是 null */
+  parent: string | null;
+  /** 只有子目录 */
+  entries: DirEntry[];
+  drives: string[];
+  home: string;
+  hints: { defaultRepoRoot: string; corpusRepos: string };
+}
+
+/** .env 里的一个模型档案，不含密钥。 */
+export interface SecretProfile {
+  id: string;
+  prefix: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+  /** 必填字段都齐了 */
+  configured: boolean;
+  /** 还缺哪些字段 */
+  missing: string[];
+}
+
+export interface SecretStatus {
+  envPath: string;
+  exists: boolean;
+  profiles: SecretProfile[];
+}
+
+export interface SecretTestResult {
+  ok: boolean;
+  models: string[];
+  error?: string;
 }
 
 export interface EvaluateResult {
@@ -146,5 +193,50 @@ export const api = {
     request<{ path: string }>("/api/save-dataset", {
       method: "POST",
       body: JSON.stringify({ dataset, file }),
+    }),
+
+  /** 列一个目录下的子目录，用来挑被测仓库。 */
+  dirs: (path?: string) =>
+    request<DirListing>(
+      `/api/dirs${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+    ),
+
+  /** 读 .env 里的档案状态（不含密钥）。 */
+  secrets: () => request<SecretStatus>("/api/secrets"),
+
+  /**
+   * 把一个档案写进 .env。
+   *
+   * 密钥只走这一条路：浏览器 → 本地服务 → 本机 .env，
+   * 不落 localStorage、不进 URL、不进日志，也不回显。
+   */
+  saveSecret: (payload: {
+    prefix: string;
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+    label?: string;
+  }) =>
+    request<{ ok: boolean; envPath: string; status: SecretStatus }>(
+      "/api/secrets",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  /** 清掉某个档案的密钥。 */
+  clearSecret: (prefix: string) =>
+    request<{ ok: boolean; envPath: string; status: SecretStatus }>(
+      "/api/secrets",
+      { method: "DELETE", body: JSON.stringify({ prefix }) },
+    ),
+
+  /**
+   * 拿档案（或者还没保存的 key）问一次服务端的模型列表。
+   *
+   * 密钥只在服务端用一次，浏览器拿到的只有模型 id。
+   */
+  testSecret: (payload: { prefix: string; testKey?: string }) =>
+    request<SecretTestResult>("/api/secrets/test", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 };
