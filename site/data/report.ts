@@ -413,7 +413,7 @@ export interface ModelComparison {
   note: string;
 }
 
-export const report = raw as unknown as ExperimentReport;
+export let report = raw as unknown as ExperimentReport;
 
 /**
  * 迭代阶梯的每一轮。
@@ -422,22 +422,84 @@ export const report = raw as unknown as ExperimentReport;
  * 阶梯是时间序列——每一轮继承上一轮，只相对上一轮改一个变量，
  * 然后用完全相同的协议重跑一遍。
  */
-export const ladder = [...(report.ladder ?? [])];
+export let ladder: LadderStep[] = [];
 
 /** 阶梯每一轮的运行记录，按轮次顺序。 */
-export const ladderRuns = [...(report.ladderRuns ?? [])];
+export let ladderRuns: EvalRun[] = [];
 
 /** 上一版评测台的对照快照，旧报告没带时为 undefined。 */
-export const baseline = report.baseline;
+export let baseline: BaselineSnapshot | undefined;
 
 /** 从基线版本到当前版本，代码层面改了什么。 */
-export const changes = report.changes ?? [];
+export let changes: string[] = [];
 
 /** 多模型对比数据，旧报告没带时为 undefined。 */
-export const modelComparison = report.modelComparison;
+export let modelComparison: ModelComparison | undefined;
 
 /** 多项目对比数据，旧报告没带时为 undefined。 */
-export const multiProject = report.multiProject;
+export let multiProject: MultiProjectComparison | undefined;
+
+/** 生成层运行记录，按策略顺序排好。 */
+export let runs: EvalRun[] = [];
+
+/** 检索层策略指标，按策略顺序排好。 */
+export let strategies: StrategyMetrics[] = [];
+
+/** 全部题目去重后按题号排序，三种策略共用同一份题目列表。 */
+export let questions: RetrievalCase[] = [];
+
+/** 成功率最高的生成层运行，报告里没有生成层记录时为 undefined。 */
+export let bestRun: EvalRun | undefined;
+
+export const FAILURE_LABEL: Record<NonNullable<RunCase["failureKind"]>, string> = {
+  "wrong-location": "定位错了",
+  "missing-detail": "要点漏了",
+  hallucination: "编造内容",
+  timeout: "调用失败",
+};
+
+/**
+ * 换一份报告数据。
+ *
+ * 公开站点用构建期写死的 report.json；本地工作台用运行时读进来的数据。
+ * 两种入口共用同一批组件，所以这里把导出改成活绑定，
+ * setReport 之后所有组件下一次渲染读到的是新数据。
+ */
+export function setReport(next: ExperimentReport): void {
+  report = next;
+  ladder = [...(next.ladder ?? [])];
+  ladderRuns = [...(next.ladderRuns ?? [])];
+  baseline = next.baseline;
+  changes = next.changes ?? [];
+  modelComparison = next.modelComparison;
+  multiProject = next.multiProject;
+
+  runs = [...(next.runs ?? [])].sort(
+    (a, b) =>
+      STRATEGY_ORDER.indexOf(a.chunking.id) -
+      STRATEGY_ORDER.indexOf(b.chunking.id),
+  );
+
+  strategies = [...(next.strategies ?? [])].sort(
+    (a, b) =>
+      STRATEGY_ORDER.indexOf(a.strategy.id) -
+      STRATEGY_ORDER.indexOf(b.strategy.id),
+  );
+
+  const map = new Map<string, RetrievalCase>();
+  for (const strategy of strategies) {
+    for (const item of strategy.cases) {
+      if (!map.has(item.questionId)) map.set(item.questionId, item);
+    }
+  }
+  questions = [...map.values()].sort((a, b) =>
+    a.questionId.localeCompare(b.questionId, undefined, { numeric: true }),
+  );
+
+  bestRun = [...runs].sort(
+    (a, b) => b.summary.successRate - a.summary.successRate,
+  )[0];
+}
 
 /** 某轮阶梯对应的运行记录。 */
 export function ladderRun(stepId: string): EvalRun | undefined {
@@ -461,38 +523,6 @@ export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
 
 export const STRATEGY_ORDER = ["fixed-800", "fixed-400", "function-level"];
 
-/** 生成层运行记录，按策略顺序排好。 */
-export const runs = [...report.runs].sort(
-  (a, b) =>
-    STRATEGY_ORDER.indexOf(a.chunking.id) -
-    STRATEGY_ORDER.indexOf(b.chunking.id),
-);
-
-export const FAILURE_LABEL: Record<NonNullable<RunCase["failureKind"]>, string> = {
-  "wrong-location": "定位错了",
-  "missing-detail": "要点漏了",
-  hallucination: "编造内容",
-  timeout: "调用失败",
-};
-
-export const strategies = [...report.strategies].sort(
-  (a, b) =>
-    STRATEGY_ORDER.indexOf(a.strategy.id) - STRATEGY_ORDER.indexOf(b.strategy.id),
-);
-
-/** 全部题目去重后按题号排序，三种策略共用同一份题目列表。 */
-export const questions = (() => {
-  const map = new Map<string, RetrievalCase>();
-  for (const strategy of strategies) {
-    for (const item of strategy.cases) {
-      if (!map.has(item.questionId)) map.set(item.questionId, item);
-    }
-  }
-  return [...map.values()].sort((a, b) =>
-    a.questionId.localeCompare(b.questionId, undefined, { numeric: true }),
-  );
-})();
-
 export function strategyById(id: string): StrategyMetrics | undefined {
   return strategies.find((item) => item.strategy.id === id);
 }
@@ -506,11 +536,6 @@ export function runCase(
     .find((run) => run.runId === runId)
     ?.cases.find((item) => item.questionId === questionId);
 }
-
-/** 成功率最高的策略，作为逐题视图的默认展示对象。 */
-export const bestRun = [...runs].sort(
-  (a, b) => b.summary.successRate - a.summary.successRate,
-)[0];
 
 /** 某条证据是否被检索命中：文件相同且行号区间有交集。 */
 export function citationHits(
@@ -649,3 +674,6 @@ export function summarizeRun(run: EvalRun) {
     totalCost: sums.agentCost + sums.judgeCost,
   };
 }
+
+/** 模块加载时先装上构建期写死的那份报告，公开站点直接用这份。 */
+setReport(raw as unknown as ExperimentReport);

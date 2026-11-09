@@ -96,6 +96,29 @@ node --experimental-strip-types src/cli.ts ladder \
   --reuse out/report.json --baseline out/report-previous.json
 ```
 
+## 本地工作台：填数据出图，不用先读介绍
+
+线上站是给评委看的叙事页；本地工作台是给你自己用的工具页，
+打开就能粘数据看结果，或者直接录一套题跑检索评测。
+
+```bash
+cd site && npm ci && npm run build:local   # 构建工作台页面（只做一次）
+cd ../harness && node --experimental-strip-types src/cli.ts serve
+```
+
+然后打开 http://127.0.0.1:8787/ ：
+
+- **填数据出图**：把 `report.json` 粘进去（或选文件），下面的表格和图表立刻换成这份数据；
+- **录题集跑评测**：选一套题集或新建一套，校验证据行号，然后跑检索评测，
+  结果直接进到同一套图表里。
+
+工作台只有两个地址：`/` 是工具页，`/story` 是叙事版（和线上站一样）。
+服务只监听 127.0.0.1，不对外暴露。
+
+页面上的图表和线上站是同一套组件，数字来自同一份报告；
+评测跑的是 harness 里真正的检索代码，不是在浏览器里抄一份算法，
+所以这里看到的召回率和命令行跑出来的一致。
+
 ## 许可
 
 本仓库代码采用 MIT 许可，见 [LICENSE](LICENSE)。被测仓库各自的许可保留在语料目录内，

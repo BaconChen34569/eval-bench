@@ -25,10 +25,11 @@ import { Separator } from "@/components/ui/separator";
  * 不是手写的数字），右边是当前版本的同口径记录。
  */
 export function BaselineSection() {
-  if (!baseline || !bestRun) return null;
+  const current = bestRun;
+  if (!baseline || !current) return null;
 
   const currentStrategy = strategies.find(
-    (item) => item.strategy.id === bestRun.chunking.id,
+    (item) => item.strategy.id === current.chunking.id,
   );
 
   const rows: {
@@ -41,14 +42,14 @@ export function BaselineSection() {
     {
       label: "成功率",
       before: baseline.summary.successRate,
-      after: bestRun.summary.successRate,
+      after: current.summary.successRate,
       format: (value: number) => formatPercent(value),
       better: "high",
     },
     {
       label: "judge 均分",
       before: baseline.summary.avgJudgeScore,
-      after: bestRun.summary.avgJudgeScore,
+      after: current.summary.avgJudgeScore,
       format: (value: number) => value.toFixed(2),
       better: "high",
     },
@@ -82,11 +83,11 @@ export function BaselineSection() {
     },
   ];
 
-  const threshold = bestRun.summary.successThreshold;
+  const threshold = current.summary.successThreshold;
   const beforeCases = new Map(
     baseline.cases.map((item) => [item.questionId, item]),
   );
-  const flips = bestRun.cases
+  const flips = current.cases
     .map((item) => {
       const before = beforeCases.get(item.questionId);
       return {
@@ -106,7 +107,7 @@ export function BaselineSection() {
   );
   const stillFailing = flips.filter((item) => item.after < threshold);
   const rateDelta =
-    bestRun.summary.successRate - baseline.summary.successRate;
+    current.summary.successRate - baseline.summary.successRate;
 
   return (
     <div className="flex flex-col gap-6">
@@ -120,7 +121,7 @@ export function BaselineSection() {
           </span>{" "}
           变成{" "}
           <span className="font-mono text-chart-2">
-            {formatPercent(bestRun.summary.successRate)}
+            {formatPercent(current.summary.successRate)}
           </span>
           {"（"}
           {(Math.abs(rateDelta) * 100).toFixed(1)} 个百分点）。{" "}
@@ -136,7 +137,7 @@ export function BaselineSection() {
           <CardDescription>
             左栏是上一版（代码版本 {baseline.codeVersion}，
             {baseline.chunking.label}），右栏是当前版本
-            （{bestRun.chunking.label}）。条形长度按两栏的最大值归一化。
+            （{current.chunking.label}）。条形长度按两栏的最大值归一化。
             两栏取的都是「三种切分策略横向对比」里最好的那一次——
             迭代阶梯里的数字属于另一组配置，放在下一节。
           </CardDescription>

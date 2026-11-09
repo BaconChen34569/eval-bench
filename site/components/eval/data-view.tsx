@@ -73,7 +73,7 @@ export function DataView() {
       });
     }
     return out;
-  }, [keyword]);
+  }, [keyword, questions, runs, strategies]);
 
   return (
     <div id="data-view" className="flex flex-col gap-6">

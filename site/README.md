@@ -22,6 +22,23 @@ npm run preview
 
 The build fixes `NODE_ENV=production` before loading Vite, independently of the terminal environment. It checks the frontend and bundled component types and emits `dist/index.html` and assets. `npm run preview` serves this output locally. Reuse passing checks while source is unchanged; no additional unit-test suite or browser QA is required by the template.
 
+## 本地工作台（多页构建）
+
+除了叙事版 `index.html`，这个项目还有一份给本地用户用的工具页 `local.html`：
+打开就是填数据和看结果，或者录题集跑评测，不用先读一遍介绍。
+
+```sh
+npm run build:local     # 输出到 dist-local/，资源在 local-assets/
+```
+
+它和线上站共用同一套组件与同一份 `data/report.json` 契约：
+数据层用 `setReport()` 在运行时换数据，所以换一份报告不用改任何组件。
+本地页由 harness 的 `serve` 命令托管（`node --experimental-strip-types src/cli.ts serve`），
+页面通过 `/api/*` 调真正的评测代码。
+
+两份产物分开输出是有意的：`dist/` 是发布给 Qoder Sites 的，
+`dist-local/` 只在本机用，不会混进发布包。
+
 ## Optional Function
 
 The default page is entirely static and does not call a Function. For server behavior, adapt the public, credential-free example in `functions/handler.ts`. `functions/index.ts` is the Deno deployment entry point. Check `deno --version` before using a separate terminal for:

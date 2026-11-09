@@ -109,7 +109,35 @@ node --experimental-strip-types src/cli.ts run \
 # 改了失败归因规则后，重算已有报告的归因（不重新调用模型）
 node --experimental-strip-types scripts/reclassify.ts \
   out/report.json ../corpus/repos/flask-3.1.3
+
+# 起本地工作台：打开就是填数据和看结果，不用先读一遍介绍
+node --experimental-strip-types src/cli.ts serve --port 8787
 ```
+
+`serve` 需要先把工作台页面构建出来（只做一次）：
+
+```bash
+cd site && npm ci && npm run build:local
+```
+
+服务只监听 `127.0.0.1`。两个地址：`/` 是工作台（填数据、录题集、跑评测），
+`/story` 是叙事版（和线上站同一份构建产物）。
+
+## 本地工作台的接口
+
+工作台页面本身不含评测逻辑，它调的是这几个接口，接口背后就是命令行走的那套代码：
+
+| 接口 | 作用 |
+| --- | --- |
+| `GET /api/health` | 代码版本、默认仓库路径、可用题集列表 |
+| `GET /api/dataset?id=...` | 取一套题集（按 id 或文件名都能找到） |
+| `POST /api/validate` | 校验证据行号，回传问题和提示 |
+| `POST /api/evaluate` | 跑检索层评测，回传三种切分策略的指标 |
+| `POST /api/save-dataset` | 把页面上的题集存回 `datasets/` |
+
+`/api/evaluate` 走的是 `runRetrievalEval`，和 `experiment` 命令同一条代码路径，
+所以工作台上的召回率和命令行跑出来的数字必然一致。
+写题集这一步故意留在页面上：证据要精确到行号，对着源码改比对着 JSON 改快。
 
 ## 配置模型
 

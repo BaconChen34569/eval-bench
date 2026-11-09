@@ -22,12 +22,6 @@ import {
 
 type Version = "final" | "base";
 
-/** 起步版和最终版各取阶梯的首轮与末轮，回答文字都是真实运行记录。 */
-const baseStep: LadderStep | undefined = ladder[0];
-const finalStep: LadderStep | undefined = ladder[ladder.length - 1];
-const baseRun = baseStep ? ladderRun(baseStep.id) : undefined;
-const finalRun = finalStep ? ladderRun(finalStep.id) : undefined;
-
 function caseOf(run: EvalRun | undefined, questionId: string): RunCase | undefined {
   return run?.cases.find((item) => item.questionId === questionId);
 }
@@ -45,6 +39,12 @@ export function AgentReplay() {
   const [filter, setFilter] = useState<"all" | "pass" | "fail">("all");
   const [expanded, setExpanded] = useState(false);
 
+  // 起步版和最终版各取阶梯的首轮与末轮，回答文字都是真实运行记录。
+  const baseStep: LadderStep | undefined = ladder[0];
+  const finalStep: LadderStep | undefined = ladder[ladder.length - 1];
+  const baseRun = baseStep ? ladderRun(baseStep.id) : undefined;
+  const finalRun = finalStep ? ladderRun(finalStep.id) : undefined;
+
   const threshold = finalRun?.summary.successThreshold ?? 4;
 
   /** 默认落在提升最大的一道题上：同一道题，两个版本的差距最直观。 */
@@ -60,7 +60,7 @@ export function AgentReplay() {
       }
     }
     return best;
-  }, []);
+  }, [questions, finalRun, baseRun]);
 
   const [selectedId, setSelectedId] = useState(defaultId);
 
@@ -73,7 +73,7 @@ export function AgentReplay() {
         if (filter === "fail") return record.judgeScore < threshold;
         return true;
       }),
-    [filter, threshold],
+    [filter, threshold, questions, finalRun],
   );
 
   // 筛选后如果当前题不在列表里，就落到列表第一题，避免显示一道被筛掉的题。

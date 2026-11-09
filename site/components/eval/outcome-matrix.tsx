@@ -12,7 +12,6 @@ import {
  */
 export function OutcomeMatrix() {
   const threshold = runs[0]?.summary.successThreshold ?? 4;
-
   const cells = (questionId: string) =>
     runs.map((run) => {
       const entry = run.cases.find(
@@ -35,6 +34,16 @@ export function OutcomeMatrix() {
       (item) => item.judgeScore >= run.summary.successThreshold,
     ).length,
   }));
+
+  if (runs.length === 0) {
+    return (
+      <p className="rounded-lg border bg-card px-4 py-6 text-sm text-muted-foreground">
+        这一章要生成层的运行记录（模型回答 + judge 打分），
+        当前这份报告里没有，先看检索层的策略对比。
+      </p>
+    );
+  }
+
   const best = wins.reduce((a, b) => (b.count > a.count ? b : a));
 
   return (

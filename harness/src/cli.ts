@@ -1,5 +1,5 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { runEvaluation } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
@@ -10,6 +10,8 @@ import { runComparison } from "./compare.ts";
 import { readBaseline } from "./baseline.ts";
 import { buildMultiProjectComparison, type ProjectManifest } from "./projects.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
+import { DEFAULT_RETRIEVAL, STRATEGIES } from "./strategies.ts";
+import { serve, HARNESS_ROOT } from "./serve.ts";
 import type {
   BaselineSnapshot,
   ChunkingStrategy,
@@ -31,48 +33,14 @@ import type {
   node --experimental-strip-types src/cli.ts report    <run.json...> [--out report.json]
   node --experimental-strip-types src/cli.ts projects <manifest.json> [--out multi-project.json] [--report 报告.json] [--step v7]
   node --experimental-strip-types src/cli.ts judge-check <dataset.json> [--out judge-validation.json] [--judge-model 档案]
+ *   node --experimental-strip-types src/cli.ts serve [--port 8787]
  *   node --experimental-strip-types src/cli.ts models
 
  * 换模型跑：--model qwen；换打分模型：--judge-model glm。
  * 两个参数只影响这一次调用，不改 .env。
  */
 
-export const STRATEGIES: Record<string, ChunkingStrategy> = {
-  "fixed-800": {
-    id: "fixed-800",
-    label: "固定窗口 800 字符",
-    kind: "fixed-window",
-    windowSize: 800,
-    overlap: 120,
-  },
-  "fixed-400": {
-    id: "fixed-400",
-    label: "固定窗口 400 字符",
-    kind: "fixed-window",
-    windowSize: 400,
-    overlap: 60,
-  },
-  "function-level": {
-    id: "function-level",
-    label: "函数级切分",
-    kind: "function-level",
-    minFunctionLines: 3,
-  },
-};
-
-/**
- * 横向对比时三种切分策略共用的检索配置。
- *
- * 三种策略必须用同一套检索器，否则分数的变化说不清是切分造成的还是检索造成的。
- * 这里用的是工具迭代到最后一轮定下来的那套配置（BM25 + 结构感知重排 + 中英术语扩展），
- * 也就是评测台实际会跑的那一套——在最好的操作点上比较切分方式。
- */
-const DEFAULT_RETRIEVAL: RetrievalConfig = {
-  topK: 6,
-  rerank: true,
-  rerankMode: "structure-aware",
-  queryExpansion: true,
-};
+export { STRATEGIES };
 
 function usage(): never {
   console.error(
@@ -83,6 +51,7 @@ function usage(): never {
   node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案]
   node --experimental-strip-types src/cli.ts report <run.json...> [--out report.json]
   node --experimental-strip-types src/cli.ts models [--model 档案]
+  node --experimental-strip-types src/cli.ts serve [--port 8787]
   node --experimental-strip-types src/cli.ts compare <dataset.json> <repoRoot> [--out comparison.json] [--report 旧报告.json] [--report-out 新报告.json] [--agents a,b] [--judges a,b] [--step v7]
 
 可用策略: ${Object.keys(STRATEGIES).join(", ")}
@@ -96,7 +65,10 @@ compare 命令跑多模型对比：所有被测模型用同一份配置，每把
 projects 命令做多项目对比：不同仓库用同一份配置各跑一轮，横向比。
 manifest 里列出每个项目的评测集、仓库目录和运行记录路径。
 
-judge-check 命令做 judge 自检：让 judge 给人工写的参考答案打分，和人工评分比较。`,
+judge-check 命令做 judge 自检：让 judge 给人工写的参考答案打分，和人工评分比较。
+
+serve 命令起本地工作台：打开就是填数据和看结果，不需要先读介绍。
+它复用同一套评测代码，只是把结果送到浏览器里。`,
   );
   process.exit(1);
 }
@@ -755,6 +727,40 @@ async function main(): Promise<void> {
       }
       console.log("");
     }
+    return;
+  }
+
+  if (command === "serve") {
+    const port = Number(flagValue(args, "--port") ?? "8787");
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(`端口不合法：${port}`);
+    }
+    const workbenchRoot = join(HARNESS_ROOT, "..", "site", "dist-local");
+    const storyRoot = join(HARNESS_ROOT, "..", "site", "dist");
+    const datasetsRoot = join(HARNESS_ROOT, "datasets");
+    const defaultRepoRoot = resolve(
+      join(HARNESS_ROOT, "..", "corpus", "repos", "flask-3.1.3"),
+    );
+
+    try {
+      await stat(join(workbenchRoot, "local.html"));
+    } catch {
+      throw new Error(
+        `还没构建本地工作台：${workbenchRoot} 里没有 local.html。\n` +
+          "先构建一次：cd site && npm ci && npm run build:local",
+      );
+    }
+
+    try {
+      await stat(join(storyRoot, "index.html"));
+    } catch {
+      throw new Error(
+        `还没构建站点：${storyRoot} 里没有 index.html。\n` +
+          "先构建一次：cd site && npm ci && npm run build",
+      );
+    }
+
+    await serve({ port, workbenchRoot, storyRoot, datasetsRoot, defaultRepoRoot });
     return;
   }
 

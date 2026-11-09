@@ -31,7 +31,7 @@ export function QuestionExplorer() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<QuestionCategory | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [runId, setRunId] = useState(bestRun.runId);
+  const [runId, setRunId] = useState(bestRun?.runId ?? "");
   const [expandedAnswer, setExpandedAnswer] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
@@ -44,7 +44,7 @@ export function QuestionExplorer() {
         item.questionId.toLowerCase().includes(keyword)
       );
     });
-  }, [query, category]);
+  }, [query, category, questions]);
 
   return (
     <div className="flex flex-col gap-6">

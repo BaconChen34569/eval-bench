@@ -56,6 +56,19 @@ import {
 
 const REPO_URL = "https://github.com/BaconChen34569/eval-bench";
 
+const LOCAL_WORKBENCH_COMMANDS = `# 0. 构建本地工具页（只做一次，在仓库根目录执行）
+cd site
+npm ci
+npm run build:local
+
+# 1. 起本地工作台
+cd ../harness
+node --experimental-strip-types src/cli.ts serve
+
+# 2. 浏览器打开
+#    http://127.0.0.1:8787/      工具页：填数据 / 录题集 / 跑评测
+#    http://127.0.0.1:8787/story 这一页的本地版本`;
+
 const WINDOWS_COMMANDS = `# 0. 拉语料（在仓库根目录执行）
 powershell -ExecutionPolicy Bypass -File corpus\\fetch.ps1
 
@@ -1742,6 +1755,27 @@ export default function App() {
               <p className="text-sm text-muted-foreground">
                 评测集、检索器和切分策略全部开源，跑出来的每个数字都能在几分钟内被重新算一遍。
                 代码在 <a href={REPO_URL} target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-foreground">GitHub 仓库</a>（MIT 许可）。
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">不想啃命令行？起一个本地工作台</CardTitle>
+              <CardDescription>
+                仓库里还带一份本地工具页：起一个服务，打开浏览器就是录题集、校验证据、
+                跑检索评测、看图表，没有介绍内容。它和这一页共用同一套组件、
+                同一份 report.json 契约，所以数字口径一致；服务只监听 127.0.0.1，
+                不对外暴露，产物也不进发布包。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex min-w-0 flex-col gap-3">
+              <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
+                <code>{LOCAL_WORKBENCH_COMMANDS}</code>
+              </pre>
+              <p className="text-sm text-muted-foreground">
+                打开 http://127.0.0.1:8787/ 就是工具页；
+                同一端口下的 /story 是这一页的本地版本。命令和坑见仓库 README。
               </p>
             </CardContent>
           </Card>
