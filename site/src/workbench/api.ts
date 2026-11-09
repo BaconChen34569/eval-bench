@@ -98,9 +98,17 @@ export interface SecretStatus {
   profiles: SecretProfile[];
 }
 
+/** 接口上的一个模型，附带价格信息。 */
+export interface SecretModel {
+  id: string;
+  /** 已知要花钱为 true，已知免费为 false，查不到价格时为 null */
+  paid: boolean | null;
+  price?: { prompt: number; completion: number; currency: string };
+}
+
 export interface SecretTestResult {
   ok: boolean;
-  models: string[];
+  models: SecretModel[];
   error?: string;
 }
 

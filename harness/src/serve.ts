@@ -24,6 +24,7 @@ import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION } from "./schema.ts";
 import { buildLlmConfig, listModels } from "./llm.ts";
 import { discoverProfiles } from "./profiles.ts";
+import { lookupBuiltinPrice } from "./pricing.ts";
 import type { EvalDataset } from "./schema.ts";
 
 const MIME: Record<string, string> = {
@@ -585,6 +586,38 @@ function parseSecretPayload(body: unknown): {
   return { prefix, updates, testKey: testKey || undefined };
 }
 
+/** 接口上的一个模型，带上价格信息，页面据此标出哪些要花钱。 */
+export interface SecretModel {
+  id: string;
+  /** 已知要花钱为 true，已知免费为 false，查不到价格时为 null */
+  paid: boolean | null;
+  price?: { prompt: number; completion: number; currency: string };
+}
+
+/**
+ * 给一个模型 id 配上价格。
+ *
+ * 先看内置价目表；这个档案自己在 .env 里写了单价、
+ * 而模型正好是这个档案默认那个模型时，以 .env 为准。
+ * 两边都查不到就标成「不知道」——宁可不说，也不给一个错的数字。
+ */
+function describeSecretModel(
+  id: string,
+  envPrice: { prompt: number; completion: number; currency: string } | undefined,
+): SecretModel {
+  const price = envPrice ?? lookupBuiltinPrice(id);
+  if (!price) return { id, paid: null };
+  return {
+    id,
+    paid: price.prompt > 0 || price.completion > 0,
+    price: {
+      prompt: price.prompt,
+      completion: price.completion,
+      currency: price.currency,
+    },
+  };
+}
+
 /**
  * 用档案里的密钥问一次服务端的模型列表，验证这个 key 通不通。
  *
@@ -593,7 +626,7 @@ function parseSecretPayload(body: unknown): {
 async function testSecret(
   prefix: string,
   testKey?: string,
-): Promise<{ ok: boolean; models: string[]; error?: string }> {
+): Promise<{ ok: boolean; models: SecretModel[]; error?: string }> {
   const values = envRecord(parseEnvFile(await readEnvText()));
   if (testKey) values[`${prefix}_API_KEY`] = testKey;
   const config = buildLlmConfig(values, prefix);
@@ -603,9 +636,25 @@ async function testSecret(
   if (!config.apiKey) {
     return { ok: false, models: [], error: "还没填密钥" };
   }
+  const prompt = Number(values[`${prefix}_PRICE_PROMPT`]);
+  const completion = Number(values[`${prefix}_PRICE_COMPLETION`]);
+  const ownModel = values[`${prefix}_MODEL`]?.trim();
+  const envPrice =
+    Number.isFinite(prompt) && ownModel
+      ? {
+          prompt,
+          completion: Number.isFinite(completion) ? completion : 0,
+          currency: values[`${prefix}_PRICE_CURRENCY`]?.trim() || "¥",
+        }
+      : undefined;
   try {
     const models = await listModels(config);
-    return { ok: true, models };
+    return {
+      ok: true,
+      models: models.map((id) =>
+        describeSecretModel(id, id === ownModel ? envPrice : undefined),
+      ),
+    };
   } catch (error) {
     return {
       ok: false,

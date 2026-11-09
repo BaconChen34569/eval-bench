@@ -27,22 +27,37 @@ import {
  * 这里只做编排：表格、图表、逐题检索台、导出按钮
  * 都是公开站那套组件，工作台和公开站看到的是同一套实现。
  */
-export function ReportPanel() {
+export function ReportPanel({
+  variant,
+}: {
+  /** 哪个模块的结果区：两个模块各自有各自的空状态引导。 */
+  variant: "load" | "dataset";
+}) {
   if (strategies.length === 0) {
     return (
       <div className="rounded-lg border bg-card px-4 py-6 text-sm text-muted-foreground">
         <p className="font-medium text-foreground">这里还没有数据</p>
-        <p className="mt-2">两条路，出一条就有图：</p>
-        <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
-          <li>
-            上面的「填数据出图」→ 点「载入 report.json」，
-            直接读评测台跑出来的产物（harness/out/report.json）。
-          </li>
-          <li>
-            切到「录题集跑评测」→ 录几道题 → 「跑检索评测」，
-            页面会把结果直接送到这里。
-          </li>
-        </ul>
+        {variant === "load" ? (
+          <>
+            <p className="mt-2">上面点「载入 report.json」就能出图：</p>
+            <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
+              <li>
+                直接读评测台跑出来的产物（harness/out/report.json）；
+              </li>
+              <li>
+                或者把从别处拿到的报告 JSON 粘进上面的框里。
+              </li>
+            </ul>
+          </>
+        ) : (
+          <>
+            <p className="mt-2">这个模块的结果来自你在这里跑的评测：</p>
+            <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
+              <li>上面录几道题，先点「校验证据」确认行号没抄错；</li>
+              <li>再点「跑检索评测」，结果会直接送到这里。</li>
+            </ul>
+          </>
+        )}
         <p className="mt-2 text-xs">
           这页不预置示例数据：看到的每个数字都来自你自己跑出来的那一份。
         </p>

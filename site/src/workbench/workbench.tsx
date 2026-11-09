@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 
-import { setReport, type ExperimentReport } from "@/data/report";
+import { setReport, emptyReport, type ExperimentReport } from "@/data/report";
 import { api, type Health } from "@/src/workbench/api";
 import { DatasetPanel } from "@/src/workbench/dataset-panel";
 import { LoadPanel } from "@/src/workbench/load-panel";
@@ -24,6 +24,14 @@ export function Workbench() {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [tab, setTab] = useState("load");
+  /**
+   * 两份结果各归各的模块：
+   * 「填数据出图」载入的报告和「录题集跑评测」跑出来的报告互不串台。
+   */
+  const [reports, setReports] = useState<{
+    load: ExperimentReport | null;
+    dataset: ExperimentReport | null;
+  }>({ load: null, dataset: null });
   const [theme, setTheme] = useTheme();
   const resultRef = useRef<HTMLElement>(null);
 
@@ -41,13 +49,27 @@ export function Workbench() {
 
   // 数据换了一份就把结果面板整块重挂一次，
   // 这样组件里 useMemo 缓存的旧结果不会留在屏幕上。
-  const applyReport = (next: ExperimentReport) => {
+  const applyReport = (
+    next: ExperimentReport,
+    source: "load" | "dataset",
+  ) => {
+    setReports((prev) => ({ ...prev, [source]: next }));
     setReport(next);
     setVersion((value) => value + 1);
     // 结果区在页面最下面，跑完评测得让人看见图，别自己去找。
     window.requestAnimationFrame(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  // 换页时把这一页该看的报告放上桌：没跑过的页就是空的，
+  // 不能把另一页的结果端过来。
+  const switchTab = (next: string) => {
+    setTab(next);
+    if (next === "secrets") return;
+    const target = next === "load" ? reports.load : reports.dataset;
+    setReport(target ?? emptyReport());
+    setVersion((value) => value + 1);
   };
 
   return (
@@ -98,7 +120,7 @@ node --experimental-strip-types src/cli.ts serve`}
           </div>
         )}
 
-        <Tabs value={tab} onValueChange={setTab} className="flex flex-col gap-4">
+        <Tabs value={tab} onValueChange={switchTab} className="flex flex-col gap-4">
           <TabsList>
             <TabsTrigger value="load">填数据出图</TabsTrigger>
             <TabsTrigger value="dataset">录题集跑评测</TabsTrigger>
@@ -106,14 +128,24 @@ node --experimental-strip-types src/cli.ts serve`}
           </TabsList>
 
           <TabsContent value="load" className="flex flex-col gap-4">
-            <LoadPanel onReport={applyReport} />
+            <LoadPanel onReport={(next) => applyReport(next, "load")} />
+            <ResultSection
+              variant="load"
+              resultRef={resultRef}
+              version={version}
+            />
           </TabsContent>
 
           <TabsContent value="dataset" className="flex flex-col gap-4">
             <DatasetPanel
               health={health}
-              onReport={applyReport}
+              onReport={(next) => applyReport(next, "dataset")}
               onHealthChange={setHealth}
+            />
+            <ResultSection
+              variant="dataset"
+              resultRef={resultRef}
+              version={version}
             />
           </TabsContent>
 
@@ -121,22 +153,37 @@ node --experimental-strip-types src/cli.ts serve`}
             <SecretsPanel />
           </TabsContent>
         </Tabs>
-
-        {/* 结果区是三个 Tab 共用的，但密钥页跟报告没关系，不显示这块空图表。 */}
-        {tab !== "secrets" && (
-          <section ref={resultRef} className="flex flex-col gap-4 scroll-mt-20">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
-                结果
-              </h2>
-              <span className="text-xs text-muted-foreground">
-                图表和公开站是同一套组件，数字来自同一份报告
-              </span>
-            </div>
-            <ReportPanel key={version} />
-          </section>
-        )}
       </main>
     </div>
+  );
+}
+
+/**
+ * 结果区。
+ *
+ * 两个模块各有一份：填进来的数据和跑出来的结果是两回事，
+ * 摆在同一个区块里会让人以为跑评测已经跑过了。
+ */
+function ResultSection({
+  variant,
+  resultRef,
+  version,
+}: {
+  variant: "load" | "dataset";
+  resultRef: RefObject<HTMLElement | null>;
+  version: number;
+}) {
+  return (
+    <section ref={resultRef} className="flex flex-col gap-4 scroll-mt-20">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
+          结果
+        </h2>
+        <span className="text-xs text-muted-foreground">
+          图表和公开站是同一套组件，数字来自同一份报告
+        </span>
+      </div>
+      <ReportPanel key={version} variant={variant} />
+    </section>
   );
 }
