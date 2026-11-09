@@ -160,13 +160,16 @@ cd site && npm ci && npm run build:local
 | --- | --- |
 | `GET /api/health` | 代码版本、默认仓库路径、可用题集列表 |
 | `GET /api/dataset?id=...` | 取一套题集（按 id 或文件名都能找到） |
+| `GET /api/reports` | 列出 `out/` 里的评测产物（含 `history/` 里的历史副本），标出哪些能直接载入出图 |
+| `GET /api/report?file=...` | 读一份评测产物 |
 | `POST /api/validate` | 校验证据行号，回传问题和提示 |
 | `POST /api/evaluate` | 跑检索层评测，回传三种切分策略的指标 |
-| `POST /api/save-dataset` | 把页面上的题集存回 `datasets/` |
+| `POST /api/save-dataset` | 把页面上的题集存回 `datasets/`（带 `file` 字段时写回指定文件） |
 
 `/api/evaluate` 走的是 `runRetrievalEval`，和 `experiment` 命令同一条代码路径，
 所以工作台上的召回率和命令行跑出来的数字必然一致。
 写题集这一步故意留在页面上：证据要精确到行号，对着源码改比对着 JSON 改快。
+`/api/reports` 和 `/api/report` 只读 `out/` 目录以内的文件，路径越界会被拒绝。
 
 ## 配置模型
 

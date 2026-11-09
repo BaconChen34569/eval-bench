@@ -273,6 +273,7 @@
 - **深色模式**：右上角「自动 / 浅 / 深」，刷新后仍保持
 - **复现命令**：一条命令跑完整套评测，换成自己的仓库只需要改两处路径
 - **本地工作台**：不想先啃命令行的话，clone 之后一条命令起一个本地工具页——打开就是填数据出图、录题集、校验证据、跑检索评测，**没有介绍内容**，服务只监听 127.0.0.1 不对外暴露。它和线上站共用同一套组件、同一份 report.json 契约，评测跑的是 harness 里真正的检索代码，所以这里的召回率和命令行跑出来的一致
+- **工作台的细节**：评测跑完的报告一键载入（不用自己找 `out/report.json` 在哪，历史副本也能挑）；题目可以下载模板、让 AI 按模板出题后再把 JSON 导回来，手写的报告粘进去自动排版；页面不预置任何示例数据，看到的每个数字都是你自己跑出来的那一份
 
 ---
 
@@ -361,7 +362,7 @@ cd ../site && npm run dev
 
 多次跑不会互相覆盖：每次写报告都会在 `harness/out/history/` 留一份带时间戳的副本，旧结果翻得回来。
 
-不想走命令行的话还有一条路：`cd site && npm ci && npm run build:local`，然后 `cd ../harness && node --experimental-strip-types src/cli.ts serve`，浏览器打开 http://127.0.0.1:8787/ 就是本地工作台——填数据出图、录题集、校验证据、跑检索评测都在一个页面里，没有介绍内容。服务只监听 127.0.0.1。
+不想走命令行的话还有一条路：`cd site && npm ci && npm run build:local`，然后 `cd ../harness && node --experimental-strip-types src/cli.ts serve`，浏览器打开 http://127.0.0.1:8787/ 就是本地工作台——填数据出图、录题集、校验证据、跑检索评测都在一个页面里，没有介绍内容。服务只监听 127.0.0.1。命令行跑完的报告不用再手动拷，工作台里点「载入 report.json」直接从 `harness/out/` 读；题集那边可以先「下载模板」交给 AI 出题、审完再把 JSON 导回来，也可以一键复制出题提示词让 AI 照着写。
 
 **Windows 用户**：第 1 步换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`（和 bash 版产出的语料逐字节一致），后面的命令写成一行、不用 `\` 续行；并且**必须先 `cd harness`**——`.env` 是按当前工作目录找的。还有两处最容易踩：**cmd 里没有 `cp`**，第 2 步和第 8 步要改成 `copy .env.example .env` 和 `copy out\report.json ..\site\data\report.json`；以及控制台 GBK 乱码、`ExperimentalWarning` 被渲染成红色假错误、`.ps1` 要存成带 BOM 的 UTF-8。站点「怎么复现」那一节把 Windows 和 macOS/Linux 的命令逐条分开给了，每条都能单独复制。
 

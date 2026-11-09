@@ -33,6 +33,8 @@ npm run build:local     # 输出到 dist-local/，资源在 local-assets/
 
 它和线上站共用同一套组件与同一份 `data/report.json` 契约：
 数据层用 `setReport()` 在运行时换数据，所以换一份报告不用改任何组件。
+公开站那份构建期报告在 `data/report-public.ts` 里装进容器（`App.tsx` 靠它的副作用 import 拿到数据），
+工作台则从空数据开始，用户自己跑完再载入——页面不预置示例数字。
 本地页由 harness 的 `serve` 命令托管（`node --experimental-strip-types src/cli.ts serve`），
 页面通过 `/api/*` 调真正的评测代码。
 
