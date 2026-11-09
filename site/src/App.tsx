@@ -47,8 +47,67 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 const REPO_URL = "https://github.com/BaconChen34569/eval-bench";
+
+const WINDOWS_COMMANDS = `# 0. 拉语料（在仓库根目录执行）
+powershell -ExecutionPolicy Bypass -File corpus\\fetch.ps1
+
+# 1. 校验评测集：证据行号必须真实存在
+cd harness
+node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
+
+# 2. 跑完整评测：检索层 + judge 自检 + 生成层
+#    没有密钥时只跑检索层，报告里不会出现生成层数据
+node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
+
+# 3. 跑工具迭代阶梯：每轮只改一个变量
+#    --reuse 会复用配置一致、且代码版本一致的已有运行记录
+#    --baseline 传入上一版报告，把旧结果一并写进报告，用于展示优化前后
+node --experimental-strip-types src/cli.ts ladder datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json --reuse out/report.json --baseline out/report-previous.json
+
+# 4. 跑多模型对比：换被测模型，再让每把尺子各量一遍
+#    主尺子量所有模型，其余尺子对同一批答案重新打分（答案不动）
+#    需要在 harness/.env 里配好几家服务商的密钥
+node --experimental-strip-types src/cli.ts compare datasets/flask.json ../corpus/repos/flask-3.1.3 --report out/report.json --report-out out/report.json
+
+# 5. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
+#    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`;
+
+const UNIX_COMMANDS = `# 0. 拉语料（在仓库根目录执行）
+bash corpus/fetch.sh
+
+# 1. 校验评测集：证据行号必须真实存在
+cd harness
+node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
+
+# 2. 跑完整评测：检索层 + judge 自检 + 生成层
+#    没有密钥时只跑检索层，报告里不会出现生成层数据
+node --experimental-strip-types src/cli.ts experiment \\
+  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
+
+# 3. 跑工具迭代阶梯：每轮只改一个变量
+#    --reuse 会复用配置一致、且代码版本一致的已有运行记录
+#    --baseline 传入上一版报告，把旧结果一并写进报告，用于展示优化前后
+node --experimental-strip-types src/cli.ts ladder \\
+  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \\
+  --reuse out/report.json --baseline out/report-previous.json
+
+# 4. 跑多模型对比：换被测模型，再让每把尺子各量一遍
+#    主尺子量所有模型，其余尺子对同一批答案重新打分（答案不动）
+#    需要在 harness/.env 里配好几家服务商的密钥
+node --experimental-strip-types src/cli.ts compare \\
+  datasets/flask.json ../corpus/repos/flask-3.1.3 \\
+  --report out/report.json --report-out out/report.json
+
+# 5. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
+#    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`;
 
 const best = strategies.reduce((a, b) => (b.mrr > a.mrr ? b : a));
 const repoLines = strategies[0]?.totalRepoLines ?? 0;
@@ -267,6 +326,53 @@ function ScopeBadge({ text }: { text: string }) {
     <span className="rounded-full border bg-muted/40 px-2.5 py-0.5 align-middle text-xs font-normal font-medium text-muted-foreground">
       {text}
     </span>
+  );
+}
+
+/**
+ * 复现步骤：一格里的「做什么 + 为什么」。
+ * 命令统一放在下面的整块代码里——窄卡片里放命令会被截断。
+ */
+function ReproStep({
+  step,
+  title,
+  description,
+}: {
+  step: string;
+  title: string;
+  description: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 rounded-lg border bg-secondary/40 p-4">
+      <div className="flex items-center gap-2">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+          {step}
+        </span>
+        <span className="text-sm font-medium">{title}</span>
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground wrap-anywhere">
+        {description}
+      </p>
+    </div>
+  );
+}
+
+/**
+ * 踩坑清单：同一份命令在不同系统上失败的原因不一样，
+ * 写清楚症状比写「如有报错请搜索」有用。
+ */
+function PitfallList({ items }: { items: ReactNode[] }) {
+  return (
+    <ul className="flex min-w-0 flex-col gap-2">
+      {items.map((item, index) => (
+        <li
+          key={index}
+          className="min-w-0 text-xs leading-relaxed text-muted-foreground wrap-anywhere"
+        >
+          {item}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1440,7 +1546,8 @@ export default function App() {
               <CardTitle className="text-base">把代码拿走，本地跑一遍</CardTitle>
               <CardDescription>
                 评测流水线和站点源码都开在 GitHub 上（MIT 许可）。clone 之后不需要注册、
-                不需要密钥，几分钟就能跑出和本页一模一样的检索层数字。
+                不需要密钥，几分钟就能跑出和本页一模一样的检索层数字。命令按系统分开给——
+                同一串命令在 Windows 和 macOS/Linux 上踩的坑不在一处。
               </CardDescription>
             </CardHeader>
             <CardContent className="flex min-w-0 flex-col gap-4">
@@ -1454,77 +1561,185 @@ export default function App() {
                   打开 GitHub 仓库（eval-bench）
                 </a>
               </Button>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  {
-                    step: "1",
-                    title: "clone 下来先拉语料",
-                    detail:
-                      "git clone https://github.com/BaconChen34569/eval-bench.git && cd eval-bench && bash corpus/fetch.sh —— 拉 Flask 3.1.3 等四个固定版本的源码包，约 3 MB，只要 bash + curl + tar，不用装 Python。",
-                  },
-                  {
-                    step: "2",
-                    title: "跑离线检索层",
-                    detail:
-                      "cd harness && node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 —— 不花钱、不需要密钥。",
-                  },
-                  {
-                    step: "3",
-                    title: "对照本页数字",
-                    detail:
-                      "三种切分策略的 recall@1/3/6 与 MRR 会打在终端上，应当和这页完全一致。生成层需要你自己的模型密钥。",
-                  },
-                ].map((item) => (
-                  <div key={item.step} className="min-w-0 rounded-lg border bg-secondary/40 p-4">
-                    <div className="flex items-center gap-2">
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
-                        {item.step}
-                      </span>
-                      <span className="text-sm font-medium">{item.title}</span>
-                    </div>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground wrap-anywhere">
-                      {item.detail}
-                    </p>
+
+              <Tabs defaultValue="windows" className="min-w-0">
+                <TabsList>
+                  <TabsTrigger value="windows">Windows</TabsTrigger>
+                  <TabsTrigger value="unix">macOS / Linux</TabsTrigger>
+                </TabsList>
+
+                <TabsContent
+                  value="windows"
+                  className="mt-4 flex min-w-0 flex-col gap-4"
+                >
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <ReproStep
+                      step="1"
+                      title="拉语料"
+                      description={
+                        <>
+                          先 <code className="font-mono">git clone</code> 仓库并进到{" "}
+                          <code className="font-mono">eval-bench</code>，再跑仓库自带的{" "}
+                          <code className="font-mono">corpus\fetch.ps1</code>：它从 PyPI
+                          抓 Flask 3.1.3 等四个固定版本的源码包并解包，约 3 MB。
+                          只要 PowerShell 5.1 以上加 Node.js，不用装 Python，也不用装 Git。
+                        </>
+                      }
+                    />
+                    <ReproStep
+                      step="2"
+                      title="跑离线检索层"
+                      description={
+                        <>
+                          先切到 <span className="font-mono">harness</span>{" "}
+                          再跑：<span className="font-mono">.env</span>{" "}
+                          是按当前工作目录找的，在仓库根目录跑会读不到密钥。
+                          这一层不花钱、不需要密钥。
+                        </>
+                      }
+                    />
+                    <ReproStep
+                      step="3"
+                      title="对照本页数字"
+                      description={
+                        <>
+                          三种切分策略的 recall@1/3/6 与 MRR 会打在终端上，应当和这页完全一致。
+                          生成层需要你自己的模型密钥。
+                        </>
+                      }
+                    />
                   </div>
-                ))}
-              </div>
+
+                  <h4 className="text-sm font-medium">完整命令（复制即用）</h4>
+                  <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
+                    <code>{WINDOWS_COMMANDS}</code>
+                  </pre>
+
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <h4 className="text-sm font-medium">Windows 上最容易踩的坑</h4>
+                    <PitfallList
+                      items={[
+                        <>
+                          <span className="font-medium text-foreground">中文输出乱码。</span>{" "}
+                          Windows PowerShell 5.1 控制台默认 GBK，Node 打印的 UTF-8
+                          中文会变成方块或问号。先执行一次{" "}
+                          <code className="font-mono">
+                            [Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+                          </code>
+                          ；用 PowerShell 7 或 Windows Terminal 则默认就是 UTF-8。
+                        </>,
+                        <>
+                          <span className="font-medium text-foreground">红色 NativeCommandError 是假警报。</span>{" "}
+                          <code className="font-mono">node --experimental-strip-types</code>{" "}
+                          会往 stderr 写一行 ExperimentalWarning，PowerShell 5.1
+                          把它渲染成一条红色错误记录。命令其实已经成功，看后面的输出就行。
+                        </>,
+                        <>
+                          <span className="font-medium text-foreground">续行符不一样。</span>{" "}
+                          PowerShell 是反引号 <code className="font-mono">`</code>、
+                          cmd 是 <code className="font-mono">^</code>、bash 是{" "}
+                          <code className="font-mono">\</code>。本页给的 Windows
+                          命令全部写成一行，不用续行；非要续行时反引号后面不能有空格。
+                        </>,
+                        <>
+                          <span className="font-medium text-foreground">.ps1 要存成带 BOM 的 UTF-8。</span>{" "}
+                          PowerShell 5.1 按 ANSI（GBK）读没有 BOM 的 .ps1，文件里有中文注释
+                          就会直接 ParserError。<span className="font-mono">fetch.ps1</span>{" "}
+                          已经是带 BOM 的；自己写脚本记得同样存。
+                        </>,
+                        <>
+                          <span className="font-medium text-foreground">tar 可能会撞车。</span>{" "}
+                          PowerShell 里的 tar 有可能是 Git 自带的 GNU tar，而不是 Windows
+                          自带的 bsdtar。<span className="font-mono">fetch.ps1</span>{" "}
+                          里已经把路径写死到 <span className="font-mono">System32\tar.exe</span>，
+                          不用你操心。
+                        </>,
+                      ]}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent
+                  value="unix"
+                  className="mt-4 flex min-w-0 flex-col gap-4"
+                >
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <ReproStep
+                      step="1"
+                      title="拉语料"
+                      description={
+                        <>
+                          先 <code className="font-mono">git clone</code> 仓库并进到{" "}
+                          <code className="font-mono">eval-bench</code>，再跑仓库自带的{" "}
+                          <code className="font-mono">corpus/fetch.sh</code>：它从 PyPI
+                          抓 Flask 3.1.3 等四个固定版本的源码包并解包，约 3 MB。
+                          只要 bash + curl + tar + Node.js，不用装 Python。
+                        </>
+                      }
+                    />
+                    <ReproStep
+                      step="2"
+                      title="跑离线检索层"
+                      description={
+                        <>
+                          先切到 <span className="font-mono">harness</span>{" "}
+                          再跑：<span className="font-mono">.env</span>{" "}
+                          是按当前工作目录找的，在仓库根目录跑会读不到密钥。
+                          这一层不花钱、不需要密钥。
+                        </>
+                      }
+                    />
+                    <ReproStep
+                      step="3"
+                      title="对照本页数字"
+                      description={
+                        <>
+                          三种切分策略的 recall@1/3/6 与 MRR 会打在终端上，应当和这页完全一致。
+                          生成层需要你自己的模型密钥。
+                        </>
+                      }
+                    />
+                  </div>
+
+                  <h4 className="text-sm font-medium">完整命令（复制即用）</h4>
+                  <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
+                    <code>{UNIX_COMMANDS}</code>
+                  </pre>
+
+                  <div className="flex min-w-0 flex-col gap-2">
+                    <h4 className="font-medium text-sm">macOS / Linux 上要注意的</h4>
+                    <PitfallList
+                      items={[
+                        <>
+                          <span className="font-medium text-foreground">必须先 cd harness。</span>{" "}
+                          <span className="font-mono">.env</span> 和默认输出路径{" "}
+                          <span className="font-mono">out/report.json</span>{" "}
+                          都是按当前工作目录算的，在仓库根目录跑会读不到密钥，报告也会落到别处。
+                        </>,
+                        <>
+                          <span className="font-medium text-foreground">Node 要 22.13 以上。</span>{" "}
+                          <code className="font-mono">--experimental-strip-types</code>{" "}
+                          从这个版本才可用；更老的 Node 改用{" "}
+                          <code className="font-mono">npx tsx src/cli.ts …</code> 即可。
+                        </>,
+                        <>
+                          <span className="font-medium text-foreground">tar 参数两个系统都吃。</span>{" "}
+                          <span className="font-mono">fetch.sh</span> 用的{" "}
+                          <code className="font-mono">--strip-components</code> 在 macOS
+                          自带的 bsdtar 和 Linux 的 GNU tar 上都支持，不用改写法。
+                        </>,
+                      ]}
+                    />
+                  </div>
+                </TabsContent>
+              </Tabs>
+
               <p className="text-sm text-muted-foreground">
                 需要 Node.js 22.13 以上（用 <code className="font-mono text-xs">--experimental-strip-types</code>{" "}
                 直接跑 TypeScript，harness 本身零第三方依赖，不需要 npm install）。
                 不想装 git 的话，仓库页的 Code → Download ZIP 拿到的永远是最新快照。
               </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6">
-              <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
-                <code>{`# 1. 校验评测集：证据行号必须真实存在
-node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
-
-# 2. 跑完整评测：检索层 + judge 自检 + 生成层
-#    没有密钥时只跑检索层，报告里不会出现生成层数据
-node --experimental-strip-types src/cli.ts experiment \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
-
-# 3. 跑工具迭代阶梯：每轮只改一个变量
-#    --reuse 会复用配置一致、且代码版本一致的已有运行记录
-#    --baseline 传入上一版报告，把旧结果一并写进报告，用于展示优化前后
-node --experimental-strip-types src/cli.ts ladder \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \\
-  --reuse out/report.json --baseline out/report-previous.json
-
-# 4. 跑多模型对比：换被测模型，再让每把尺子各量一遍
-#    主尺子量所有模型，其余尺子对同一批答案重新打分（答案不动）
-#    需要在 harness/.env 里配好几家服务商的密钥
-node --experimental-strip-types src/cli.ts compare \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 \\
-  --report out/report.json --report-out out/report.json
-
-# 5. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
-#    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`}</code>
-              </pre>
-              <p className="mt-4 text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 评测集、检索器和切分策略全部开源，跑出来的每个数字都能在几分钟内被重新算一遍。
                 代码在 <a href={REPO_URL} target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-foreground">GitHub 仓库</a>（MIT 许可）。
               </p>

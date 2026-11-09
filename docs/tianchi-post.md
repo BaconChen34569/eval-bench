@@ -356,6 +356,8 @@ cd ../site && npm run dev
 
 换成**你自己的课设仓库**只需要改两处：`datasets/` 里换一份带人工标注证据的题集，`corpus/repos/` 里放你的仓库路径，其余一行不用动。
 
+**Windows 用户**：第 1 步换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`（和 bash 版产出的语料逐字节一致），后面的命令写成一行、不用 `\` 续行；并且**必须先 `cd harness`**——`.env` 是按当前工作目录找的。站点「怎么复现」那一节把 Windows 和 macOS/Linux 的坑分开列了：控制台 GBK 乱码、`ExperimentalWarning` 被渲染成红色假错误、`.ps1` 要存成带 BOM 的 UTF-8。
+
 ---
 
 ## 五、用 Qoder 做出来的过程（含截图）

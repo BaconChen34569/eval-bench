@@ -2,8 +2,8 @@
 
 本仓库自身的代码采用 MIT 许可（见 [LICENSE](LICENSE)）。
 
-以下第三方组件**不随本仓库分发**，由 `corpus/fetch.sh` 在评测时从 PyPI 官方获取，
-各自保留原始许可：
+以下第三方组件**不随本仓库分发**，由 `corpus/fetch.sh`（macOS/Linux）或
+`corpus/fetch.ps1`（Windows）在评测时从 PyPI 官方获取，各自保留原始许可：
 
 | 组件 | 版本 | 许可 | 用途 |
 |---|---|---|---|

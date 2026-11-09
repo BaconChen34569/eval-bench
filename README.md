@@ -42,6 +42,10 @@ node --experimental-strip-types src/cli.ts experiment \
   datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
 ```
 
+Windows（PowerShell）把第 3 行换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`，
+后面的命令写成一行（不用 `\` 续行）。两个拉取脚本产出的语料逐字节一致，
+系统差异见 [harness/README.md](harness/README.md#在-windows-上跑)。
+
 不需要密钥：这时只跑检索层。配置密钥的方法见 [harness/README.md](harness/README.md)。
 
 要跑多模型对比（同一套题换几个模型各跑一轮，看评测台能不能区分出模型好坏）：

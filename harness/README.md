@@ -79,6 +79,9 @@ scripts/mock-llm.mjs     测试夹具：一个假的 OpenAI 兼容服务
 
 ## 命令
 
+下面的命令按 bash 写成（用 `\` 续行）。**必须先 `cd harness`**：`.env` 和默认输出路径
+`out/report.json` 都按当前工作目录算，在仓库根目录跑会读不到密钥，报告也会落到别处。
+
 ```bash
 # 校验评测集：每条证据的行号必须真实存在
 node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
@@ -186,6 +189,20 @@ node --experimental-strip-types src/cli.ts compare \
     --model qwen --judge-model glm --out out/run-qwen-judged-by-glm.json
   ```
 
+
+## 在 Windows 上跑
+
+harness 本身是跨平台的（零第三方依赖，Node 22.13+ 即可），但有几个系统差异会绊人：
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| 中文输出乱码 | Windows PowerShell 5.1 控制台默认 GBK，Node 打印的是 UTF-8 | 先执行 `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8`，或改用 PowerShell 7 / Windows Terminal |
+| 红色 `NativeCommandError` | `node --experimental-strip-types` 往 stderr 写一行 ExperimentalWarning，PowerShell 5.1 把它渲染成错误记录 | 假警报，看后面的输出判断成败 |
+| 命令续行 | PowerShell 用反引号、cmd 用 `^`、bash 用 `\` | 写成一行最省事；用反引号续行时反引号后面不能有空格 |
+| 拉语料 | bash 版脚本在 Windows 上要么没 bash、要么 Git Bash 的 tar 行为不一致 | 用 `corpus\fetch.ps1`（PowerShell 版，输出与 bash 版逐字节一致） |
+
+`corpus\fetch.ps1` 要存成**带 BOM 的 UTF-8**：PowerShell 5.1 按 ANSI（GBK）读没有 BOM 的
+`.ps1`，文件里的中文注释会直接报 ParserError。
 
 ## 成本是怎么算的
 

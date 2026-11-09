@@ -15,7 +15,7 @@ harness/.env
 # 评测过程中的中间产物
 harness/out/
 
-# 评测语料：用 corpus/fetch.sh 重新拉取
+# 评测语料：用 corpus/fetch.sh 或 corpus/fetch.ps1 重新拉取
 corpus/repos/
 corpus/tmp/
 
