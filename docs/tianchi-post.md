@@ -311,7 +311,7 @@ git clone https://github.com/BaconChen34569/eval-bench.git && cd eval-bench
 # 1. 拿到被测仓库（这里以 Flask 3.1.3 为例）
 bash corpus/fetch.sh
 
-# 2. 配置模型密钥（DeepSeek，OpenAI 兼容接口）
+# 2. 配置模型密钥（选填；任意一家 OpenAI 兼容服务商都行）
 cp harness/.env.example harness/.env && 编辑 harness/.env
 
 # 3. 一条命令跑完整套评测：检索层 + judge 自检 + 生成层
@@ -357,9 +357,13 @@ cd ../site && npm run dev
 
 换成**你自己的课设仓库**只需要改两处：`datasets/` 里换一份带人工标注证据的题集，`corpus/repos/` 里放你的仓库路径，其余一行不用动。
 
+密钥这一步是**选填**的：检索层完全离线，不配密钥也能跑出和站点一模一样的数字，只是报告里不会有生成层那一半。单模型评测只要一组配置完整就够，不必是 DeepSeek——任何 OpenAI 兼容的接口（阿里云百炼、智谱、Kimi、本地 vLLM 都行）填一组 `*_API_KEY` 就能跑；只有第 6 步的多模型对比才需要两家及以上。单价也不用手填，harness 内置了一张价目表兜底，`node --experimental-strip-types src/cli.ts pricing` 可以查当前生效的单价和它来自哪里。
+
+多次跑不会互相覆盖：每次写报告都会在 `harness/out/history/` 留一份带时间戳的副本，旧结果翻得回来。
+
 不想走命令行的话还有一条路：`cd site && npm ci && npm run build:local`，然后 `cd ../harness && node --experimental-strip-types src/cli.ts serve`，浏览器打开 http://127.0.0.1:8787/ 就是本地工作台——填数据出图、录题集、校验证据、跑检索评测都在一个页面里，没有介绍内容。服务只监听 127.0.0.1。
 
-**Windows 用户**：第 1 步换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`（和 bash 版产出的语料逐字节一致），后面的命令写成一行、不用 `\` 续行；并且**必须先 `cd harness`**——`.env` 是按当前工作目录找的。站点「怎么复现」那一节把 Windows 和 macOS/Linux 的坑分开列了：控制台 GBK 乱码、`ExperimentalWarning` 被渲染成红色假错误、`.ps1` 要存成带 BOM 的 UTF-8。
+**Windows 用户**：第 1 步换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`（和 bash 版产出的语料逐字节一致），后面的命令写成一行、不用 `\` 续行；并且**必须先 `cd harness`**——`.env` 是按当前工作目录找的。还有两处最容易踩：**cmd 里没有 `cp`**，第 2 步和第 8 步要改成 `copy .env.example .env` 和 `copy out\report.json ..\site\data\report.json`；以及控制台 GBK 乱码、`ExperimentalWarning` 被渲染成红色假错误、`.ps1` 要存成带 BOM 的 UTF-8。站点「怎么复现」那一节把 Windows 和 macOS/Linux 的命令逐条分开给了，每条都能单独复制。
 
 ---
 

@@ -28,6 +28,10 @@ import { LadderSection } from "@/components/eval/ladder-section";
 import { ModelComparisonSection } from "@/components/eval/model-comparison-section";
 import { ProjectComparisonSection } from "@/components/eval/project-comparison-section";
 import { BaselineSection } from "@/components/eval/baseline-section";
+import {
+  CommandSteps,
+  type CommandStep,
+} from "@/components/eval/command-steps";
 import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 import {
   StrategyCostChart,
@@ -56,71 +60,332 @@ import {
 
 const REPO_URL = "https://github.com/BaconChen34569/eval-bench";
 
-const LOCAL_WORKBENCH_COMMANDS = `# 0. 构建本地工具页（只做一次，在仓库根目录执行）
-cd site
-npm ci
-npm run build:local
+const LOCAL_WORKBENCH_STEPS: CommandStep[] = [
+  {
+    id: "lb-build",
+    title: "1. 构建本地工具页（只做一次）",
+    cwd: "eval-bench",
+    lines: ["cd site", "npm ci", "npm run build:local"],
+    note: (
+      <>
+        产物写在 <code className="font-mono">site\\dist-local</code>，不进发布包。
+      </>
+    ),
+  },
+  {
+    id: "lb-serve",
+    title: "2. 起本地工作台",
+    cwd: "eval-bench\\site",
+    lines: ["cd ..\\harness", "node --experimental-strip-types src/cli.ts serve"],
+    note: (
+      <>
+        服务只监听 127.0.0.1，不对外暴露。想换端口加{" "}
+        <code className="font-mono">--port 8899</code>。
+      </>
+    ),
+  },
+  {
+    id: "lb-open",
+    title: "3. 浏览器打开",
+    lines: [
+      "http://127.0.0.1:8787/      工具页：填数据 / 录题集 / 跑评测",
+      "http://127.0.0.1:8787/story 这一页的本地版本",
+    ],
+  },
+];
 
-# 1. 起本地工作台
-cd ../harness
-node --experimental-strip-types src/cli.ts serve
+const WINDOWS_STEPS: CommandStep[] = [
+  {
+    id: "win-clone",
+    title: "1. 拉代码，进到仓库根目录",
+    cwd: "任意目录",
+    lines: [
+      "git clone https://github.com/BaconChen34569/eval-bench.git",
+      "cd eval-bench",
+    ],
+    note: (
+      <>
+        没装 git 就用仓库页的 Code → Download ZIP，解压后进到{" "}
+        <code className="font-mono">eval-bench</code> 目录。后面每一步都在这个目录或它的子目录下执行——
+        语料脚本在根目录，评测命令在 <code className="font-mono">harness</code> 里。
+      </>
+    ),
+  },
+  {
+    id: "win-corpus",
+    title: "2. 拉语料",
+    cwd: "eval-bench",
+    lines: ["powershell -ExecutionPolicy Bypass -File corpus\\fetch.ps1"],
+    note: (
+      <>
+        从 PyPI 抓 Flask 3.1.3 等四个固定版本的源码包，解包到{" "}
+        <code className="font-mono">corpus\\repos\\</code>，约 3 MB。只要 PowerShell 5.1 以上，不用装 Python。
+      </>
+    ),
+  },
+  {
+    id: "win-env",
+    title: "3. 配密钥",
+    optional: true,
+    cwd: "eval-bench",
+    lines: ["cd harness", "copy .env.example .env"],
+    note: (
+      <>
+        打开 <code className="font-mono">harness\\.env</code>，把任意一家服务商的{" "}
+        <code className="font-mono">*_API_KEY</code> 填上——DeepSeek、阿里云百炼、智谱、Kimi、
+        本地 vLLM 都行，只要是 OpenAI 兼容接口。检索层不要密钥，这一步只为跑生成层和 judge。
+        单价不用手填：内置价目表会兜底，<code className="font-mono">.env</code> 里写了{" "}
+        <code className="font-mono">*_PRICE_*</code> 才覆盖它。
+      </>
+    ),
+  },
+  {
+    id: "win-check",
+    title: "4. 确认档案和单价",
+    cwd: "eval-bench\\harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts models",
+      "node --experimental-strip-types src/cli.ts pricing",
+    ],
+    note: (
+      <>
+        <code className="font-mono">models</code> 列出每个档案和接口上真实可用的模型 id，
+        <code className="font-mono">pricing</code> 列出当前生效的单价和它来自哪里。
+        <strong className="font-medium text-foreground">单模型跑评测只要一组配全就够，不必是 DeepSeek</strong>
+        ；多模型对比要两家及以上各配一组密钥。
+      </>
+    ),
+  },
+  {
+    id: "win-validate",
+    title: "5. 校验评测集",
+    cwd: "eval-bench\\harness",
+    lines: [
+      "node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3",
+    ],
+    note: (
+      <>
+        每条证据的行号必须真实存在。这步不花钱、不需要密钥。
+      </>
+    ),
+  },
+  {
+    id: "win-experiment",
+    title: "6. 跑完整评测",
+    cwd: "eval-bench\\harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json",
+    ],
+    note: (
+      <>
+        没配密钥就只跑检索层，报告里不会出现生成层数字。报告会写到{" "}
+        <code className="font-mono">out\\report.json</code>，
+        同时在 <code className="font-mono">out\\history\\</code> 留一份带时间戳的副本——
+        <strong className="font-medium text-foreground">多次跑不会互相覆盖</strong>。
+      </>
+    ),
+  },
+  {
+    id: "win-ladder",
+    title: "7. 跑工具迭代阶梯",
+    cwd: "eval-bench\\harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts ladder datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json --reuse out/report.json",
+    ],
+    note: (
+      <>
+        每一轮只改一个变量，同一套协议重跑。
+        <code className="font-mono">--reuse</code> 复用配置一致、且代码版本一致的已有运行记录，
+        <code className="font-mono">--baseline</code> 传入上一版报告，站点据此展示优化前后。
+      </>
+    ),
+  },
+  {
+    id: "win-compare",
+    title: "8. 跑多模型对比",
+    optional: true,
+    cwd: "eval-bench\\harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts compare datasets/flask.json ../corpus/repos/flask-3.1.3 --report out/report.json --report-out out/report.json",
+    ],
+    note: (
+      <>
+        需要两家及以上配置完整的档案（每家一组 <code className="font-mono">*_API_KEY</code>），
+        只有一家时会直接报错提示怎么补。主尺子量所有模型，其余尺子对同一批答案重新打分，答案不动。
+      </>
+    ),
+  },
+  {
+    id: "win-publish-data",
+    title: "9. 把结果灌进站点",
+    cwd: "eval-bench\\harness",
+    lines: ["copy out\\report.json ..\\site\\data\\report.json"],
+    note: (
+      <>
+        Windows 用 <code className="font-mono">copy</code>，macOS/Linux 用{" "}
+        <code className="font-mono">cp</code>——cmd 里没有 <code className="font-mono">cp</code>，
+        照抄 Linux 命令会报「不是内部或外部命令」。cmd 重复执行会问要不要覆盖，按 Y 即可。
+      </>
+    ),
+  },
+  {
+    id: "win-preview",
+    title: "10. 本地预览站点",
+    cwd: "eval-bench\\harness",
+    lines: ["cd ..\\site", "npm ci", "npm run dev"],
+    note: (
+      <>
+        浏览器打开终端里打印的地址，页面上的数字就是刚跑出来的那一份。
+      </>
+    ),
+  },
+];
 
-# 2. 浏览器打开
-#    http://127.0.0.1:8787/      工具页：填数据 / 录题集 / 跑评测
-#    http://127.0.0.1:8787/story 这一页的本地版本`;
-
-const WINDOWS_COMMANDS = `# 0. 拉语料（在仓库根目录执行）
-powershell -ExecutionPolicy Bypass -File corpus\\fetch.ps1
-
-# 1. 校验评测集：证据行号必须真实存在
-cd harness
-node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
-
-# 2. 跑完整评测：检索层 + judge 自检 + 生成层
-#    没有密钥时只跑检索层，报告里不会出现生成层数据
-node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
-
-# 3. 跑工具迭代阶梯：每轮只改一个变量
-#    --reuse 会复用配置一致、且代码版本一致的已有运行记录
-#    --baseline 传入上一版报告，把旧结果一并写进报告，用于展示优化前后
-node --experimental-strip-types src/cli.ts ladder datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json --reuse out/report.json --baseline out/report-previous.json
-
-# 4. 跑多模型对比：换被测模型，再让每把尺子各量一遍
-#    主尺子量所有模型，其余尺子对同一批答案重新打分（答案不动）
-#    需要在 harness/.env 里配好几家服务商的密钥
-node --experimental-strip-types src/cli.ts compare datasets/flask.json ../corpus/repos/flask-3.1.3 --report out/report.json --report-out out/report.json
-
-# 5. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
-#    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`;
-
-const UNIX_COMMANDS = `# 0. 拉语料（在仓库根目录执行）
-bash corpus/fetch.sh
-
-# 1. 校验评测集：证据行号必须真实存在
-cd harness
-node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
-
-# 2. 跑完整评测：检索层 + judge 自检 + 生成层
-#    没有密钥时只跑检索层，报告里不会出现生成层数据
-node --experimental-strip-types src/cli.ts experiment \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
-
-# 3. 跑工具迭代阶梯：每轮只改一个变量
-#    --reuse 会复用配置一致、且代码版本一致的已有运行记录
-#    --baseline 传入上一版报告，把旧结果一并写进报告，用于展示优化前后
-node --experimental-strip-types src/cli.ts ladder \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json \\
-  --reuse out/report.json --baseline out/report-previous.json
-
-# 4. 跑多模型对比：换被测模型，再让每把尺子各量一遍
-#    主尺子量所有模型，其余尺子对同一批答案重新打分（答案不动）
-#    需要在 harness/.env 里配好几家服务商的密钥
-node --experimental-strip-types src/cli.ts compare \\
-  datasets/flask.json ../corpus/repos/flask-3.1.3 \\
-  --report out/report.json --report-out out/report.json
-
-# 5. 密钥写在 harness/.env 里（已被 .gitignore 忽略），不要提交
-#    DeepSeek 确认模型 id：node --experimental-strip-types src/cli.ts models`;
+const UNIX_STEPS: CommandStep[] = [
+  {
+    id: "unix-clone",
+    title: "1. 拉代码，进到仓库根目录",
+    cwd: "任意目录",
+    lines: [
+      "git clone https://github.com/BaconChen34569/eval-bench.git",
+      "cd eval-bench",
+    ],
+    note: (
+      <>
+        没装 git 就用仓库页的 Code → Download ZIP，解压后进到{" "}
+        <code className="font-mono">eval-bench</code> 目录。后面每一步都在这个目录或它的子目录下执行——
+        语料脚本在根目录，评测命令在 <code className="font-mono">harness</code> 里。
+      </>
+    ),
+  },
+  {
+    id: "unix-corpus",
+    title: "2. 拉语料",
+    cwd: "eval-bench",
+    lines: ["bash corpus/fetch.sh"],
+    note: (
+      <>
+        从 PyPI 抓 Flask 3.1.3 等四个固定版本的源码包，解包到{" "}
+        <code className="font-mono">corpus/repos/</code>，约 3 MB。只要 bash + curl + tar，不用装 Python。
+      </>
+    ),
+  },
+  {
+    id: "unix-env",
+    title: "3. 配密钥",
+    optional: true,
+    cwd: "eval-bench",
+    lines: ["cd harness", "cp .env.example .env"],
+    note: (
+      <>
+        打开 <code className="font-mono">harness/.env</code>，把任意一家服务商的{" "}
+        <code className="font-mono">*_API_KEY</code> 填上——DeepSeek、阿里云百炼、智谱、Kimi、
+        本地 vLLM 都行，只要是 OpenAI 兼容接口。检索层不要密钥，这一步只为跑生成层和 judge。
+        单价不用手填：内置价目表会兜底，<code className="font-mono">.env</code> 里写了{" "}
+        <code className="font-mono">*_PRICE_*</code> 才覆盖它。
+      </>
+    ),
+  },
+  {
+    id: "unix-check",
+    title: "4. 确认档案和单价",
+    cwd: "eval-bench/harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts models",
+      "node --experimental-strip-types src/cli.ts pricing",
+    ],
+    note: (
+      <>
+        <code className="font-mono">models</code> 列出每个档案和接口上真实可用的模型 id，
+        <code className="font-mono">pricing</code> 列出当前生效的单价和它来自哪里。
+        <strong className="font-medium text-foreground">单模型跑评测只要一组配全就够，不必是 DeepSeek</strong>
+        ；多模型对比要两家及以上各配一组密钥。
+      </>
+    ),
+  },
+  {
+    id: "unix-validate",
+    title: "5. 校验评测集",
+    cwd: "eval-bench/harness",
+    lines: [
+      "node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3",
+    ],
+    note: (
+      <>
+        每条证据的行号必须真实存在。这步不花钱、不需要密钥。
+      </>
+    ),
+  },
+  {
+    id: "unix-experiment",
+    title: "6. 跑完整评测",
+    cwd: "eval-bench/harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json",
+    ],
+    note: (
+      <>
+        没配密钥就只跑检索层，报告里不会出现生成层数字。报告会写到{" "}
+        <code className="font-mono">out/report.json</code>，
+        同时在 <code className="font-mono">out/history/</code> 留一份带时间戳的副本——
+        <strong className="font-medium text-foreground">多次跑不会互相覆盖</strong>。
+      </>
+    ),
+  },
+  {
+    id: "unix-ladder",
+    title: "7. 跑工具迭代阶梯",
+    cwd: "eval-bench/harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts ladder datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json --reuse out/report.json",
+    ],
+    note: (
+      <>
+        每一轮只改一个变量，同一套协议重跑。
+        <code className="font-mono">--reuse</code> 复用配置一致、且代码版本一致的已有运行记录，
+        <code className="font-mono">--baseline</code> 传入上一版报告，站点据此展示优化前后。
+      </>
+    ),
+  },
+  {
+    id: "unix-compare",
+    title: "8. 跑多模型对比",
+    optional: true,
+    cwd: "eval-bench/harness",
+    lines: [
+      "node --experimental-strip-types src/cli.ts compare datasets/flask.json ../corpus/repos/flask-3.1.3 --report out/report.json --report-out out/report.json",
+    ],
+    note: (
+      <>
+        需要两家及以上配置完整的档案（每家一组 <code className="font-mono">*_API_KEY</code>），
+        只有一家时会直接报错提示怎么补。主尺子量所有模型，其余尺子对同一批答案重新打分，答案不动。
+      </>
+    ),
+  },
+  {
+    id: "unix-publish-data",
+    title: "9. 把结果灌进站点",
+    cwd: "eval-bench/harness",
+    lines: ["cp out/report.json ../site/data/report.json"],
+    note: (
+      <>
+        macOS/Linux 用 <code className="font-mono">cp</code>；Windows 上没有{" "}
+        <code className="font-mono">cp</code>，要换成 <code className="font-mono">copy</code>。
+      </>
+    ),
+  },
+  {
+    id: "unix-preview",
+    title: "10. 本地预览站点",
+    cwd: "eval-bench/harness",
+    lines: ["cd ../site", "npm ci", "npm run dev"],
+    note: (
+      <>
+        浏览器打开终端里打印的地址，页面上的数字就是刚跑出来的那一份。
+      </>
+    ),
+  },
+];
 
 const best = strategies.reduce((a, b) => (b.mrr > a.mrr ? b : a));
 const repoLines = strategies[0]?.totalRepoLines ?? 0;
@@ -1623,15 +1888,20 @@ export default function App() {
                     />
                   </div>
 
-                  <h4 className="text-sm font-medium">完整命令（复制即用）</h4>
-                  <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
-                    <code>{WINDOWS_COMMANDS}</code>
-                  </pre>
+                  <h4 className="text-sm font-medium">完整命令（每条单独复制）</h4>
+                  <CommandSteps steps={WINDOWS_STEPS} />
 
                   <div className="flex min-w-0 flex-col gap-2">
                     <h4 className="text-sm font-medium">Windows 上最容易踩的坑</h4>
                     <PitfallList
                       items={[
+                        <>
+                          <span className="font-medium text-foreground">cmd 里没有 cp。</span>{" "}
+                          <code className="font-mono">cp</code> 是 Linux/macOS 的命令，
+                          在 cmd 里会报「不是内部或外部命令」。Windows 上改用{" "}
+                          <code className="font-mono">copy</code>（PowerShell 里它又是{" "}
+                          <code className="font-mono">Copy-Item</code> 的别名，两边都能用）。
+                        </>,
                         <>
                           <span className="font-medium text-foreground">中文输出乱码。</span>{" "}
                           Windows PowerShell 5.1 控制台默认 GBK，Node 打印的 UTF-8
@@ -1714,10 +1984,8 @@ export default function App() {
                     />
                   </div>
 
-                  <h4 className="text-sm font-medium">完整命令（复制即用）</h4>
-                  <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
-                    <code>{UNIX_COMMANDS}</code>
-                  </pre>
+                  <h4 className="text-sm font-medium">完整命令（每条单独复制）</h4>
+                  <CommandSteps steps={UNIX_STEPS} />
 
                   <div className="flex min-w-0 flex-col gap-2">
                     <h4 className="font-medium text-sm">macOS / Linux 上要注意的</h4>
@@ -1770,9 +2038,7 @@ export default function App() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex min-w-0 flex-col gap-3">
-              <pre className="table-scroll overflow-x-auto rounded-md bg-secondary/60 p-4 font-mono text-xs leading-relaxed">
-                <code>{LOCAL_WORKBENCH_COMMANDS}</code>
-              </pre>
+              <CommandSteps steps={LOCAL_WORKBENCH_STEPS} />
               <p className="text-sm text-muted-foreground">
                 打开 http://127.0.0.1:8787/ 就是工具页；
                 同一端口下的 /story 是这一页的本地版本。命令和坑见仓库 README。

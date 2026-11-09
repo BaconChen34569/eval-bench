@@ -9,6 +9,7 @@
  * 用来回答「这套评测台能不能区分出模型的好坏」。
  */
 import { buildLlmConfig, type LlmConfig } from "./llm.ts";
+import { priceFromEnv, type PriceSource, type UnitPrice } from "./pricing.ts";
 
 export interface ModelProfile {
   /** 命令行里用的名字，--model qwen */
@@ -25,6 +26,10 @@ export interface ModelProfile {
   baseUrl: string;
   /** 已经选定的模型 id */
   model: string;
+  /** 解析出来的单价，和有没有填密钥无关 */
+  price?: UnitPrice;
+  /** 单价来源：.env / 内置价目表 / 没有 */
+  priceSource: PriceSource;
 }
 
 /** 跑起来必须有的三个字段。 */
@@ -75,6 +80,7 @@ function buildProfile(
 
   const hasEndpoint = Boolean(value("BASE_URL")) && Boolean(value("API_KEY"));
   const config = hasEndpoint ? buildLlmConfig(env, prefix) : null;
+  const priced = priceFromEnv(env, prefix, value("MODEL"));
 
   return {
     id,
@@ -84,6 +90,8 @@ function buildProfile(
     missing,
     baseUrl: value("BASE_URL"),
     model: value("MODEL"),
+    price: priced.price,
+    priceSource: priced.source,
   };
 }
 
@@ -95,7 +103,9 @@ export interface ReadyProfile extends ModelProfile {
 /**
  * 取一个档案来跑。
  *
- * 没给名字就用默认档案；给了名字但没定义，或者定义了但没填密钥，
+ * 没给名字就用「第一个配全的档案」——用户只填了通义千问的密钥，
+ * 就不该因为默认档案（DeepSeek）没填而跑不起来。
+ * 给了名字但没定义，或者定义了但没填密钥，
  * 都要在这里说清楚缺什么，不让错误拖到请求服务端才炸。
  */
 export function resolveProfile(
@@ -115,14 +125,24 @@ export function resolveProfile(
   };
 
   if (!id) {
+    const ready = profiles.filter(
+      (profile) => profile.missing.length === 0 && profile.config,
+    );
     const fallback =
-      profiles.find((profile) => profile.prefix === "LLM") ?? profiles[0];
-    if (!fallback) {
+      ready.find((profile) => profile.prefix === "LLM") ?? ready[0];
+    if (fallback) return pick(fallback);
+    if (!profiles.length) {
       throw new Error(
         "没有找到任何模型档案。harness/.env 里至少要有一组 *_BASE_URL / *_API_KEY / *_MODEL。",
       );
     }
-    return pick(fallback);
+    throw new Error(
+      "harness/.env 里还没有配全的模型档案，" +
+        profiles
+          .map((profile) => `${profile.id} 缺 ${profile.missing.join("/")}`)
+          .join("；") +
+        "。填好任意一组就能跑，不需要 DeepSeek。",
+    );
   }
 
   const match = profiles.find(
@@ -133,4 +153,13 @@ export function resolveProfile(
     throw new Error(`没有名为 ${id} 的模型档案。已知的档案：${known}`);
   }
   return pick(match);
+}
+
+/** 配全了的档案，可以直接跑。 */
+export function readyProfiles(
+  env: Record<string, string | undefined>,
+): ReadyProfile[] {
+  return discoverProfiles(env)
+    .filter((profile) => profile.config && profile.missing.length === 0)
+    .map((profile) => profile as ReadyProfile);
 }

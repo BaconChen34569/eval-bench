@@ -32,25 +32,62 @@ docs/             设计分析、天池投稿
 
 ## 跑起来
 
+Windows（cmd / PowerShell）和 macOS / Linux 的命令不一样，分开给。
+完整步骤（每条都能单独复制）见线上站的「怎么复现」一节。
+
+### Windows
+
+```cmd
+git clone https://github.com/BaconChen34569/eval-bench.git
+cd eval-bench
+powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1
+cd harness
+node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
+```
+
+### macOS / Linux
+
 ```bash
 git clone https://github.com/BaconChen34569/eval-bench.git
 cd eval-bench
-
-bash corpus/fetch.sh                      # 拉被测仓库，约 3 MB
+bash corpus/fetch.sh
 cd harness
 node --experimental-strip-types src/cli.ts experiment \
   datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
 ```
 
-Windows（PowerShell）把第 3 行换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`，
-后面的命令写成一行（不用 `\` 续行）。两个拉取脚本产出的语料逐字节一致，
-系统差异见 [harness/README.md](harness/README.md#在-windows-上跑)。
+没装 git 就用仓库页的 Code → Download ZIP，解压后进到 `eval-bench` 目录，
+后面的命令都在这个目录或它的子目录下执行。语料脚本在根目录，评测命令在 `harness` 里。
 
-不需要密钥：这时只跑检索层。配置密钥的方法见 [harness/README.md](harness/README.md)。
+两个拉取脚本产出的语料逐字节一致，系统差异见
+[harness/README.md](harness/README.md#在-windows-上跑)。
 
-要跑多模型对比（同一套题换几个模型各跑一轮，看评测台能不能区分出模型好坏）：
-`harness/.env` 里按前缀配好几组服务商，`cp harness/.env.example harness/.env` 之后照着填，
-然后一条命令把「换模型 + 换尺子重打分 + 算一致率」全做完：
+**不需要密钥**：这时只跑检索层，报告里不会出现生成层数字。
+
+### 配密钥（选填）
+
+只在 harness 目录里做一次：
+
+| 系统 | 命令 |
+| --- | --- |
+| Windows | `copy .env.example .env` |
+| macOS / Linux | `cp .env.example .env` |
+
+cmd 里没有 `cp`，照抄 Linux 命令会报「不是内部或外部命令」。
+
+填任意一家服务商的 `*_API_KEY` 就行（DeepSeek、阿里云百炼、智谱、Kimi、本地 vLLM，
+只要是 OpenAI 兼容接口）。**单模型跑评测只要一组配全就够，不必是 DeepSeek**；
+多模型对比要两家及以上各配一组密钥。
+
+单价不用手填：内置价目表会兜底，`.env` 里写了 `*_PRICE_*` 才覆盖它。
+想看当前生效的单价和它来自哪里：
+
+```bash
+node --experimental-strip-types src/cli.ts pricing
+```
+
+要跑多模型对比（同一套题换几个模型各跑一轮，看评测台能不能区分出模型好坏），
+一条命令把「换模型 + 换尺子重打分 + 算一致率」全做完：
 
 ```bash
 node --experimental-strip-types src/cli.ts compare \
@@ -59,6 +96,12 @@ node --experimental-strip-types src/cli.ts compare \
 ```
 
 写法见 [harness/README.md](harness/README.md)。
+
+### 多次跑会不会覆盖
+
+不会丢。`out/report.json` 是当前这一版，但每次写报告都会在 `out/history/`
+留一份带时间戳的副本（`report-2026-11-09T10-01-33.json` 这样的名字），
+终端上也会打印副本路径。想翻旧结果就从 `out/history/` 里挑。
 
 站点：
 
@@ -82,6 +125,8 @@ cd harness && node --experimental-strip-types src/cli.ts experiment \
 cp out/report.json ../site/data/report.json
 cd ../site && npm run dev
 ```
+
+Windows 上第 2 行换成 `copy out\report.json ..\site\data\report.json`（cmd 没有 `cp`）。
 
 站点展示的官方数字只有一份来源，就是仓库里的这份 `report.json`。
 线上站点不提供上传入口——页面上每个数字必须能指向唯一一份报告，

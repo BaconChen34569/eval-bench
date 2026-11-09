@@ -3,6 +3,8 @@
  * OpenAI 都能用同一个实现，换模型只需要改环境变量。
  */
 
+import { priceFromEnv, type PriceSource } from "./pricing.ts";
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -36,6 +38,8 @@ export interface LlmConfig {
    * prompt 是未命中缓存的输入价，cacheHit 是命中缓存的输入价（不填则按 prompt 计）。
    */
   pricePerMillion?: { prompt: number; completion: number; cacheHit?: number };
+  /** 单价从哪来：.env 填的、内置价目表查的，还是没有。 */
+  priceSource?: PriceSource;
   /** 计价符号，跟随价格表用 ¥ 还是 $ */
   currency?: string;
   timeoutMs?: number;
@@ -218,23 +222,26 @@ export function buildLlmConfig(
 ): LlmConfig {
   const temperature = readEnv(env, `${prefix}_TEMPERATURE`);
   const maxTokens = readEnv(env, `${prefix}_MAX_TOKENS`);
-  const promptPrice = readEnv(env, `${prefix}_PRICE_PROMPT`);
-  const completionPrice = readEnv(env, `${prefix}_PRICE_COMPLETION`);
-  const cacheHitPrice = readEnv(env, `${prefix}_PRICE_PROMPT_CACHE_HIT`);
+  const model = readEnv(env, `${prefix}_MODEL`) ?? "";
+
+  // 单价：.env 里填了以 .env 为准，没填就查内置价目表。
+  const resolved = priceFromEnv(env, prefix, model);
+
   return {
     baseUrl: readEnv(env, `${prefix}_BASE_URL`) ?? "",
     apiKey: readEnv(env, `${prefix}_API_KEY`) ?? "",
-    model: readEnv(env, `${prefix}_MODEL`) ?? "",
+    model,
     temperature: temperature ? Number(temperature) : undefined,
     maxTokens: maxTokens ? Number(maxTokens) : undefined,
-    pricePerMillion: promptPrice
+    pricePerMillion: resolved.price
       ? {
-          prompt: Number(promptPrice),
-          completion: Number(completionPrice ?? "0"),
-          cacheHit: cacheHitPrice ? Number(cacheHitPrice) : undefined,
+          prompt: resolved.price.prompt,
+          completion: resolved.price.completion,
+          cacheHit: resolved.price.cacheHit,
         }
       : undefined,
-    currency: readEnv(env, `${prefix}_PRICE_CURRENCY`),
+    priceSource: resolved.source,
+    currency: resolved.price?.currency,
   };
 }
 

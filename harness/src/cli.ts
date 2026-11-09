@@ -4,12 +4,18 @@ import { runEvaluation } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
 import { listModels } from "./llm.ts";
-import { discoverProfiles, resolveProfile, type ReadyProfile } from "./profiles.ts";
+import {
+  discoverProfiles,
+  readyProfiles,
+  resolveProfile,
+  type ReadyProfile,
+} from "./profiles.ts";
 import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
 import { readBaseline } from "./baseline.ts";
 import { buildMultiProjectComparison, type ProjectManifest } from "./projects.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
+import { describePrice } from "./pricing.ts";
 import { DEFAULT_RETRIEVAL, STRATEGIES } from "./strategies.ts";
 import { serve, HARNESS_ROOT } from "./serve.ts";
 import type {
@@ -98,9 +104,24 @@ async function readDataset(path: string): Promise<EvalDataset> {
   return JSON.parse(await readFile(path, "utf8")) as EvalDataset;
 }
 
+/**
+ * 写一个 JSON 文件，同时在同目录的 history/ 下留一份带时间戳的副本。
+ *
+ * 同一个 --out 跑第二次就会覆盖上一次的结果，
+ * 但「跑了很多次，哪一次最好」往往是事后才知道的——
+ * 每次都留一份副本，历史结果就都在，不用靠文件名记。
+ */
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, JSON.stringify(value, null, 2), "utf8");
+  const payload = JSON.stringify(value, null, 2);
+  await writeFile(path, payload, "utf8");
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const base = path.split(/[\\/]/).pop() ?? "report.json";
+  const copy = join(join(path, ".."), "history", `${base.replace(/\.json$/, "")}-${stamp}.json`);
+  await mkdir(join(copy, ".."), { recursive: true });
+  await writeFile(copy, payload, "utf8");
+  console.log(`历史副本：${copy}`);
 }
 
 /**
@@ -501,11 +522,17 @@ async function main(): Promise<void> {
 
     const dataset = await readDataset(datasetPath);
 
-    const ready = discoverProfiles(process.env)
-      .filter((profile) => profile.config && profile.missing.length === 0)
-      .map((profile) => profile as ReadyProfile);
+    const ready = readyProfiles(process.env);
     if (ready.length === 0) {
-      console.error("harness/.env 里没有配置完整的模型档案");
+      console.error(
+        "harness/.env 里没有配置完整的模型档案，" +
+          discoverProfiles(process.env)
+            .map(
+              (profile) =>
+                `${profile.id} 缺 ${profile.missing.join("/") || "无"}`,
+            )
+            .join("；"),
+      );
       process.exit(1);
     }
 
@@ -533,6 +560,17 @@ async function main(): Promise<void> {
     const agents = pick(flagValue(args, "--agents"), "被测模型");
     const judges = pick(flagValue(args, "--judges"), "打分模型");
     const primary = judges[0];
+
+    // 多模型对比的前提是有两个及以上配全的档案：
+    // 只有一个模型就谈不上对比，尺子自评偏袒也没法算。
+    if (agents.length < 2) {
+      console.error(
+        `多模型对比至少要两个配置完整的档案，现在只有 ${agents.length} 个` +
+          `（${agents.map((item) => item.label).join(" / ")}）。` +
+          "在 harness/.env 里再填一组 *_API_KEY 就行；只跑一个模型用 experiment 命令。",
+      );
+      process.exit(1);
+    }
 
     let baseReport: ExperimentReport | undefined;
     let reuseRuns: EvalRun[] = [];
@@ -727,6 +765,32 @@ async function main(): Promise<void> {
       }
       console.log("");
     }
+    return;
+  }
+
+  if (command === "pricing") {
+    const profiles = discoverProfiles(process.env);
+    if (profiles.length === 0) {
+      throw new Error(
+        "harness/.env 里还没有模型档案。先复制 .env.example 成 .env，再填 *_BASE_URL / *_API_KEY / *_MODEL。",
+      );
+    }
+
+    console.log(`从 harness/.env 里读到 ${profiles.length} 个模型档案：\n`);
+    for (const profile of profiles) {
+      console.log(`[${profile.id}] ${profile.label}   （前缀 ${profile.prefix}_）`);
+      console.log(`  模型 ${profile.model || "（还没填 *_MODEL）"}`);
+      if (profile.missing.length > 0) {
+        console.log(`  没配好，缺 ${profile.missing.join(" / ")}`);
+      }
+      console.log(`  单价 ${describePrice(profile.price, profile.priceSource)}`);
+      console.log("");
+    }
+
+    console.log("单价没填也没查到表的话，成本会记成 0——这不是模型免费。");
+    console.log(
+      "在 .env 里写 *_PRICE_PROMPT / *_PRICE_COMPLETION / *_PRICE_PROMPT_CACHE_HIT 可以覆盖内置价目表。",
+    );
     return;
   }
 

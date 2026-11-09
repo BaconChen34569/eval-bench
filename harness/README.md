@@ -82,6 +82,9 @@ scripts/mock-llm.mjs     测试夹具：一个假的 OpenAI 兼容服务
 下面的命令按 bash 写成（用 `\` 续行）。**必须先 `cd harness`**：`.env` 和默认输出路径
 `out/report.json` 都按当前工作目录算，在仓库根目录跑会读不到密钥，报告也会落到别处。
 
+Windows 上把每条写成一行（不用 `\` 续行），路径里的 `/` 换成 `\` 或照抄都行——
+Node 两种都吃。下面给的是 Windows 一份。
+
 ```bash
 # 校验评测集：每条证据的行号必须真实存在
 node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
@@ -102,6 +105,9 @@ node --experimental-strip-types src/cli.ts ladder \
 # 列出账号可用的模型 id，确认该填哪个模型名
 node --experimental-strip-types src/cli.ts models
 
+# 看当前生效的单价和它来自哪里（内置价目表还是 .env）
+node --experimental-strip-types src/cli.ts pricing
+
 # 换一个被测模型跑一轮（语料、检索链路、judge 全部不变）
 node --experimental-strip-types src/cli.ts run \
   datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model qwen
@@ -113,6 +119,29 @@ node --experimental-strip-types scripts/reclassify.ts \
 # 起本地工作台：打开就是填数据和看结果，不用先读一遍介绍
 node --experimental-strip-types src/cli.ts serve --port 8787
 ```
+
+### Windows 一份（cmd / PowerShell 都能用）
+
+```cmd
+cd harness
+node --experimental-strip-types src/validate.ts datasets/flask.json ../corpus/repos/flask-3.1.3
+node --experimental-strip-types src/cli.ts experiment datasets/flask.json ../corpus/repos/flask-3.1.3 --out out/report.json
+node --experimental-strip-types src/cli.ts models
+node --experimental-strip-types src/cli.ts pricing
+node --experimental-strip-types src/cli.ts serve --port 8787
+```
+
+### 多次跑会不会覆盖
+
+不会丢。`out/report.json` 是当前这一版，但每次写报告都会在 `out/history/`
+留一份带时间戳的副本，终端上也会打印副本路径：
+
+```
+报告已写入 out\report.json
+历史副本：out\history\report-2026-11-09T10-01-33-123Z.json
+```
+
+想翻旧结果就从 `out/history/` 里挑。
 
 `serve` 需要先把工作台页面构建出来（只做一次）：
 
@@ -144,6 +173,13 @@ cd site && npm ci && npm run build:local
 复制 `.env.example` 为 `.env` 后填写。`.env` 已被 `.gitignore` 忽略，
 **密钥不要提交，也不要贴进任何对话或命令行**。
 
+| 系统 | 命令（在 `harness` 目录里执行） |
+| --- | --- |
+| Windows | `copy .env.example .env` |
+| macOS / Linux | `cp .env.example .env` |
+
+cmd 里没有 `cp`，照抄 Linux 命令会报「不是内部或外部命令」。
+
 一个**档案**就是一组带前缀的环境变量 = 一家 OpenAI 兼容服务商：
 
 ```bash
@@ -168,6 +204,10 @@ QWEN_MODEL=qwen-plus
 跑 `cli.ts models` 可以看到 `.env` 里到底有哪些档案、各自接口上有哪些模型 id。
 
 任何 OpenAI 兼容接口都可以用：DeepSeek、阿里云百炼、智谱、Kimi、本地 vLLM。
+
+**单模型跑评测只要一组配全就够，不必是 DeepSeek。** 命令行不给 `--model` 时，
+挑的是 `.env` 里第一组配置完整的档案（默认档案 `LLM_` 优先）。
+只有多模型对比才要求两家及以上——不足两家时 `compare` 会直接报错并告诉你缺哪一组。
 
 ## 多模型对比：证明这把尺子有区分度
 
@@ -224,15 +264,24 @@ harness 本身是跨平台的（零第三方依赖，Node 22.13+ 即可），但
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
+| `cp` 不是内部或外部命令 | `cp` 是 Linux/macOS 的命令，cmd 和 Windows 都没有 | 改用 `copy`：`copy .env.example .env`、`copy out\report.json ..\site\data\report.json` |
 | 中文输出乱码 | Windows PowerShell 5.1 控制台默认 GBK，Node 打印的是 UTF-8 | 先执行 `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8`，或改用 PowerShell 7 / Windows Terminal |
 | 红色 `NativeCommandError` | `node --experimental-strip-types` 往 stderr 写一行 ExperimentalWarning，PowerShell 5.1 把它渲染成错误记录 | 假警报，看后面的输出判断成败 |
 | 命令续行 | PowerShell 用反引号、cmd 用 `^`、bash 用 `\` | 写成一行最省事；用反引号续行时反引号后面不能有空格 |
 | 拉语料 | bash 版脚本在 Windows 上要么没 bash、要么 Git Bash 的 tar 行为不一致 | 用 `corpus\fetch.ps1`（PowerShell 版，输出与 bash 版逐字节一致） |
 
+`copy` 在 cmd 和 PowerShell 里都能用（PowerShell 里它是 `Copy-Item` 的别名），
+只是 cmd 在目标文件已存在时会问一次要不要覆盖，按 Y 即可。
+
 `corpus\fetch.ps1` 要存成**带 BOM 的 UTF-8**：PowerShell 5.1 按 ANSI（GBK）读没有 BOM 的
 `.ps1`，文件里的中文注释会直接报 ParserError。
 
 ## 成本是怎么算的
+
+**单价不用手填。** 内置了一张价目表（DeepSeek、Qwen、GLM 的常见模型 id），
+`.env` 里没写 `*_PRICE_*` 时就按内置价目算；写了则以 `.env` 为准。
+`node --experimental-strip-types src/cli.ts pricing` 会列出每个档案当前生效的单价
+和它的来源（内置表 / `.env` / 没有）。
 
 单价按**每百万 token** 填，三个价目：
 
