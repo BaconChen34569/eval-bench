@@ -272,6 +272,7 @@
 - **源码下载**：整套评测流水线、四个项目共 88 道题的评测集、语料脚本和站点源码都在 GitHub 上开源（MIT 许可），clone 或直接下 Code → Download ZIP 即可，**不需要注册、不需要账号、不需要密钥**
 - **深色模式**：右上角「自动 / 浅 / 深」，刷新后仍保持
 - **复现命令**：一条命令跑完整套评测，换成自己的仓库只需要改两处路径
+- **本地工作台**：不想先啃命令行的话，clone 之后一条命令起一个本地工具页——打开就是填数据出图、录题集、校验证据、跑检索评测，**没有介绍内容**，服务只监听 127.0.0.1 不对外暴露。它和线上站共用同一套组件、同一份 report.json 契约，评测跑的是 harness 里真正的检索代码，所以这里的召回率和命令行跑出来的一致
 
 ---
 
@@ -355,6 +356,8 @@ cd ../site && npm run dev
 ```
 
 换成**你自己的课设仓库**只需要改两处：`datasets/` 里换一份带人工标注证据的题集，`corpus/repos/` 里放你的仓库路径，其余一行不用动。
+
+不想走命令行的话还有一条路：`cd site && npm ci && npm run build:local`，然后 `cd ../harness && node --experimental-strip-types src/cli.ts serve`，浏览器打开 http://127.0.0.1:8787/ 就是本地工作台——填数据出图、录题集、校验证据、跑检索评测都在一个页面里，没有介绍内容。服务只监听 127.0.0.1。
 
 **Windows 用户**：第 1 步换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`（和 bash 版产出的语料逐字节一致），后面的命令写成一行、不用 `\` 续行；并且**必须先 `cd harness`**——`.env` 是按当前工作目录找的。站点「怎么复现」那一节把 Windows 和 macOS/Linux 的坑分开列了：控制台 GBK 乱码、`ExperimentalWarning` 被渲染成红色假错误、`.ps1` 要存成带 BOM 的 UTF-8。
 
