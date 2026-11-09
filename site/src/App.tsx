@@ -1,6 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, GitBranch } from "lucide-react";
 
+// 公开站用构建期写死的报告；这个 import 有副作用，先把数据装进容器。
+import "@/data/report-public";
+
 import {
   CATEGORY_LABEL,
   DIFFICULTY_LABEL,

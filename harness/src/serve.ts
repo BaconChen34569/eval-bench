@@ -182,6 +182,114 @@ async function serveStatic(
   }
 }
 
+/**
+ * 评测产物目录：命令行默认把 report.json 写到这里。
+ * 页面按这个目录找文件，用户不用自己到处翻。
+ */
+const OUT_DIR = join(HARNESS_ROOT, "out");
+
+export interface ReportFile {
+  /** 相对产物目录的路径，比如 report.json 或 history/report-xxx.json */
+  name: string;
+  /** 绝对路径，页面直接显示出来，用户能照着去磁盘上找 */
+  path: string;
+  size: number;
+  mtime: string;
+  /** true 表示这是一次历史留存的副本 */
+  isHistory: boolean;
+  /** report = 能直接载入出图；other = 中间产物，载进来也画不出图 */
+  kind: "report" | "other";
+}
+
+/**
+ * 判断一份产物能不能直接载入出图。
+ *
+ * 产物目录里除了报告还有一堆中间产物（对比表、多项目汇总），
+ * 它们没有 strategies 数组，载进来是画不出图的。
+ */
+async function classifyReport(path: string, size: number): Promise<"report" | "other"> {
+  // 超大的文件不解析：产物目录是本地磁盘，读一遍 1MB 出不了事，
+  // 但没必要为了分类把几兆的文件全读进来。
+  if (size > 8 * 1024 * 1024) return "other";
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+    return parsed && typeof parsed === "object" && Array.isArray((parsed as { strategies?: unknown }).strategies)
+      ? "report"
+      : "other";
+  } catch {
+    return "other";
+  }
+}
+
+/**
+ * 列出评测产物。
+ *
+ * 除了当前的 report.json，也把 history/ 下的历史副本列出来：
+ * 每次跑评测都会留一份带时间戳的副本，用户想看哪一次都能直接载入。
+ */
+async function listReports(): Promise<{ outDir: string; files: ReportFile[] }> {
+  const files: ReportFile[] = [];
+
+  const push = async (
+    dir: string,
+    prefix: string,
+    isHistory: boolean,
+  ): Promise<void> => {
+    let names: string[] = [];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const path = join(dir, name);
+      try {
+        const info = await stat(path);
+        if (!info.isFile()) continue;
+        files.push({
+          name: `${prefix}${name}`,
+          path,
+          size: info.size,
+          mtime: new Date(info.mtimeMs).toISOString(),
+          isHistory,
+          kind: await classifyReport(path, info.size),
+        });
+      } catch {
+        // 读不到就跳过，不影响别的文件
+      }
+    }
+  };
+
+  await push(OUT_DIR, "", false);
+  await push(join(OUT_DIR, "history"), "history/", true);
+
+  // 新的在前；report.json 排最前，历史副本统一沉到末尾。
+  files.sort((a, b) => {
+    if (a.isHistory !== b.isHistory) return a.isHistory ? 1 : -1;
+    if (a.name === "report.json") return -1;
+    if (b.name === "report.json") return 1;
+    return b.mtime.localeCompare(a.mtime);
+  });
+
+  return { outDir: OUT_DIR, files };
+}
+
+/**
+ * 读一份评测产物。
+ *
+ * 只允许读产物目录以内的文件：路径拼好之后必须还在 out 目录里，
+ * 否则页面可以用 ../ 之类的路径把服务外面的文件读走。
+ */
+async function readReport(name: string): Promise<unknown> {
+  const target = resolve(OUT_DIR, name);
+  if (target !== OUT_DIR && !target.startsWith(OUT_DIR + sep)) {
+    throw new Error("只能读评测产物目录里的文件");
+  }
+  const content = await readFile(target, "utf8");
+  return JSON.parse(content);
+}
+
 export async function serve(options: ServeOptions): Promise<void> {
   const { workbenchRoot, storyRoot, datasetsRoot, defaultRepoRoot } = options;
 
@@ -195,8 +303,20 @@ export async function serve(options: ServeOptions): Promise<void> {
           mode: "local",
           codeVersion: CODE_VERSION,
           defaultRepoRoot,
+          outDir: OUT_DIR,
           datasets: await listDatasets(datasetsRoot),
         });
+        return;
+      }
+
+      if (path === "/api/reports" && req.method === "GET") {
+        sendJson(res, 200, await listReports());
+        return;
+      }
+
+      if (path === "/api/report" && req.method === "GET") {
+        const name = url.searchParams.get("file") ?? "report.json";
+        sendJson(res, 200, await readReport(name));
         return;
       }
 
@@ -242,10 +362,16 @@ export async function serve(options: ServeOptions): Promise<void> {
       }
 
       if (path === "/api/save-dataset" && req.method === "POST") {
-        const body = (await readBody(req)) as { dataset: EvalDataset };
+        const body = (await readBody(req)) as {
+          dataset: EvalDataset;
+          file?: string;
+        };
         const id = body.dataset.id?.trim();
         if (!id) throw new Error("数据集缺少 id");
-        const file = join(datasetsRoot, safeDatasetName(id));
+        // file 用来指明写回哪个文件：题集里的 id 和文件名不一定一样
+        // （flask.json 里的 id 是 flask-v1），写回原来那个文件才不产生重复副本。
+        const name = body.file?.trim() || id;
+        const file = join(datasetsRoot, safeDatasetName(name));
         await mkdir(datasetsRoot, { recursive: true });
         await writeFile(file, JSON.stringify(body.dataset, null, 2), "utf8");
         sendJson(res, 200, { path: file });

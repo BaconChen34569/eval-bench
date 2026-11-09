@@ -1,9 +1,11 @@
-import raw from "./report.json";
-
 /**
  * 站点消费的数据契约与 harness/src/schema.ts 一一对应。
  * report.json 由 `node --experimental-strip-types src/cli.ts experiment ...` 产出，
  * 每次跑评测后覆盖本目录下的 report.json 即可刷新站点数据。
+ *
+ * 这个模块只放「数据容器」，不自带任何数据：
+ * 公开站那份构建期报告在 report-public.ts 里装进来，
+ * 本地工作台则从空数据开始，用户自己跑完再载入。
  */
 
 export type QuestionCategory =
@@ -413,7 +415,28 @@ export interface ModelComparison {
   note: string;
 }
 
-export let report = raw as unknown as ExperimentReport;
+/** 一份空报告：没有任何数据时的初始状态。 */
+export function emptyReport(): ExperimentReport {
+  return {
+    datasetId: "",
+    repo: "",
+    costCurrency: "¥",
+    judgeValidation: {
+      sampled: 0,
+      agreement: 0,
+      meanJudgeScore: 0,
+      meanHumanScore: 0,
+      exactAgreement: 0,
+      note: "",
+    },
+    strategies: [],
+    runs: [],
+    ladder: [],
+    ladderRuns: [],
+  };
+}
+
+export let report = emptyReport();
 
 /**
  * 迭代阶梯的每一轮。
@@ -675,5 +698,3 @@ export function summarizeRun(run: EvalRun) {
   };
 }
 
-/** 模块加载时先装上构建期写死的那份报告，公开站点直接用这份。 */
-setReport(raw as unknown as ExperimentReport);

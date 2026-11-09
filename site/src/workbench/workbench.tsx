@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ export function Workbench() {
   const [healthError, setHealthError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [theme, setTheme] = useTheme();
+  const resultRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     api
@@ -41,6 +42,10 @@ export function Workbench() {
   const applyReport = (next: ExperimentReport) => {
     setReport(next);
     setVersion((value) => value + 1);
+    // 结果区在页面最下面，跑完评测得让人看见图，别自己去找。
+    window.requestAnimationFrame(() => {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   return (
@@ -110,7 +115,7 @@ node --experimental-strip-types src/cli.ts serve`}
           </TabsContent>
         </Tabs>
 
-        <section className="flex flex-col gap-4">
+        <section ref={resultRef} className="flex flex-col gap-4 scroll-mt-20">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
               结果

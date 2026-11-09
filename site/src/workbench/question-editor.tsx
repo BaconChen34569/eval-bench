@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Copy, Download, FileUp, Plus, Sparkles, Trash2 } from "lucide-react";
 
 import {
   Accordion,
@@ -21,6 +21,13 @@ import {
   type Difficulty,
   type QuestionCategory,
 } from "@/data/report";
+import { copyText, downloadText } from "@/src/workbench/clipboard";
+import { mergeQuestions, parseQuestionsFile } from "@/src/workbench/question-import";
+import {
+  QUESTION_TEMPLATE,
+  TEMPLATE_FIELDS,
+  buildPrompt,
+} from "@/src/workbench/question-template";
 import type { WorkDataset, WorkQuestion } from "@/src/workbench/api";
 
 const CATEGORIES: QuestionCategory[] = [
@@ -74,6 +81,60 @@ export function QuestionEditor({
   onChange: (next: WorkDataset) => void;
 }) {
   const [open, setOpen] = useState<string[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const parsed = parseQuestionsFile(await file.text());
+      const questions = mergeQuestions(dataset, parsed.questions);
+      onChange({
+        ...dataset,
+        id: dataset.id.trim() ? dataset.id : parsed.meta.id ?? dataset.id,
+        repo: dataset.repo.trim() ? dataset.repo : parsed.meta.repo ?? dataset.repo,
+        language: dataset.language.trim()
+          ? dataset.language
+          : parsed.meta.language ?? dataset.language,
+        questions,
+      });
+      setNote(
+        `从 ${file.name} 导入了 ${parsed.questions.length} 道题，现在共 ${questions.length} 道。`,
+      );
+    } catch (cause) {
+      setNote(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const downloadTemplate = () => {
+    // 说明也放进 JSON 里（顶层 _说明 字段），
+    // 这样下载下来的文件直接就是合法 JSON，导入时这个字段会被忽略。
+    const payload = JSON.stringify(
+      {
+        ...QUESTION_TEMPLATE,
+        _说明: Object.fromEntries(
+          TEMPLATE_FIELDS.map((item) => [item.field, item.note]),
+        ),
+      },
+      null,
+      2,
+    );
+    downloadText("questions-template.json", payload);
+    setNote("模板已下载。填好证据行号后，用「导入题目」读回来。");
+  };
+
+  const copyPrompt = async () => {
+    const prompt = buildPrompt(dataset.repo || "（仓库名）", 20);
+    const ok = await copyText(prompt);
+    setCopied(ok);
+    setNote(
+      ok
+        ? "出题提示词已复制。粘给能读代码的模型，它会按同一套 JSON 结构吐题。"
+        : "复制失败，浏览器没给剪贴板权限，手动选中提示词复制吧。",
+    );
+    if (ok) setTimeout(() => setCopied(false), 2000);
+  };
 
   const updateQuestion = (index: number, patch: Partial<WorkQuestion>) => {
     const questions = dataset.questions.map((item, position) =>
@@ -129,15 +190,62 @@ export function QuestionEditor({
           共 {dataset.questions.length} 道题。证据行号必须真实存在，
           跑评测前先校验一遍。
         </p>
-        <Button size="sm" variant="outline" onClick={addQuestion}>
-          <Plus className="mr-1 size-4" />
-          加一道题
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={downloadTemplate}>
+            <Download className="mr-1 size-4" />
+            下载模板
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void copyPrompt()}
+          >
+            <Sparkles className="mr-1 size-4" />
+            {copied ? "已复制" : "复制出题提示词"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+          >
+            <FileUp className="mr-1 size-4" />
+            导入题目
+          </Button>
+          <Button size="sm" onClick={addQuestion}>
+            <Plus className="mr-1 size-4" />
+            加一道题
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => void importFile(event.target.files?.[0])}
+          />
+        </div>
       </div>
+
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
+
+      <details className="rounded-lg border bg-card px-3 py-2">
+        <summary className="cursor-pointer text-xs text-muted-foreground">
+          模板里每个字段是干什么的
+        </summary>
+        <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-[10rem_1fr]">
+          {TEMPLATE_FIELDS.map((item) => (
+            <div key={item.field} className="contents">
+              <dt className="font-mono text-muted-foreground">{item.field}</dt>
+              <dd>{item.note}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
 
       {dataset.questions.length === 0 && (
         <p className="rounded-lg border bg-card px-4 py-6 text-sm text-muted-foreground">
-          还没有题目。先加一道：写清问题、标准答案和证据位置。
+          还没有题目。三条路都行：先「下载模板」照着写；把出题提示词丢给模型
+          生成，再用「导入题目」读回来；或者直接「加一道题」手写。
+          写完记得填证据位置——行号必须真实存在。
         </p>
       )}
 
@@ -150,7 +258,7 @@ export function QuestionEditor({
         {dataset.questions.map((item, index) => (
           <AccordionItem key={`${item.id}-${index}`} value={`${item.id}-${index}`}>
             <AccordionTrigger>
-              <span className="flex min-w-0 flex-col gap-1">
+              <span className="flex min-w-0 flex-1 flex-col gap-1">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs text-muted-foreground">
                     {item.id}

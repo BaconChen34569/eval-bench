@@ -9,6 +9,7 @@
 import type {
   Difficulty,
   EvidenceRef,
+  ExperimentReport,
   QuestionCategory,
   StrategyMetrics,
 } from "@/data/report";
@@ -27,7 +28,27 @@ export interface Health {
   mode: string;
   codeVersion: string;
   defaultRepoRoot: string;
+  /** 评测产物目录，命令行跑出来的 report.json 就在这儿 */
+  outDir: string;
   datasets: DatasetSummary[];
+}
+
+/** 评测产物目录下的一个文件。 */
+export interface ReportFile {
+  /** 相对产物目录的路径，比如 report.json 或 history/report-xxx.json */
+  name: string;
+  /** 绝对路径，页面直接显示给用户看 */
+  path: string;
+  size: number;
+  mtime: string;
+  isHistory: boolean;
+  /** report = 能直接载入出图；other = 中间产物 */
+  kind: "report" | "other";
+}
+
+export interface ReportList {
+  outDir: string;
+  files: ReportFile[];
 }
 
 export interface ValidateResult {
@@ -100,6 +121,15 @@ export const api = {
   dataset: (id: string) =>
     request<WorkDataset>(`/api/dataset?id=${encodeURIComponent(id)}`),
 
+  /** 列出评测产物目录里的报告文件。 */
+  reports: () => request<ReportList>("/api/reports"),
+
+  /** 读一份评测产物。 */
+  report: (file: string) =>
+    request<ExperimentReport>(
+      `/api/report?file=${encodeURIComponent(file)}`,
+    ),
+
   validate: (dataset: WorkDataset, repoRoot: string) =>
     request<ValidateResult>("/api/validate", {
       method: "POST",
@@ -112,9 +142,9 @@ export const api = {
       body: JSON.stringify({ dataset, repoRoot }),
     }),
 
-  saveDataset: (dataset: WorkDataset) =>
+  saveDataset: (dataset: WorkDataset, file?: string) =>
     request<{ path: string }>("/api/save-dataset", {
       method: "POST",
-      body: JSON.stringify({ dataset }),
+      body: JSON.stringify({ dataset, file }),
     }),
 };

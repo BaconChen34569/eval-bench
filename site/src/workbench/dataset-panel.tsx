@@ -1,7 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ClipboardCopy, Download, Loader2, TriangleAlert } from "lucide-react";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +38,8 @@ import {
   type ValidateResult,
   type WorkDataset,
 } from "@/src/workbench/api";
+import { copyText, downloadText } from "@/src/workbench/clipboard";
+import { parseQuestionsFile } from "@/src/workbench/question-import";
 import { QuestionEditor } from "@/src/workbench/question-editor";
 
 function blankDataset(): WorkDataset {
@@ -62,6 +78,9 @@ export function DatasetPanel({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [sourceFile, setSourceFile] = useState("");
+  const [sourceId, setSourceId] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -101,6 +120,11 @@ export function DatasetPanel({
       const loaded = await api.dataset(id);
       setDataset(loaded);
       setValidation(null);
+      // 记下这份题集是从哪个文件来的：文件名叫 flask，题集 id 却是 flask-v1，
+      // 保存时得写回同一个文件，不然磁盘上会多出一份 flask-v1.json。
+      const summary = (health?.datasets ?? []).find((item) => item.id === id);
+      setSourceFile(summary?.file ?? "");
+      setSourceId(loaded.id);
       setMessage(`已载入题集 ${loaded.id}（${loaded.questions.length} 道题）`);
     });
 
@@ -108,11 +132,23 @@ export function DatasetPanel({
     if (!file) return;
     await run("load", async () => {
       const text = await file.text();
-      const parsed = JSON.parse(text) as WorkDataset;
-      setDataset(parsed);
+      // 题目数组、带 questions 的题集、单道题都认，
+      // 解析不了就抛错，别把半截数据塞进状态里。
+      const parsed = parseQuestionsFile(text);
+      setDataset({
+        id: parsed.meta.id ?? "my-dataset",
+        repo: parsed.meta.repo ?? "",
+        language: parsed.meta.language ?? "python",
+        createdAt: parsed.meta.createdAt ?? today(),
+        questions: parsed.questions,
+      });
       setSelectedId("");
+      setSourceFile("");
+      setSourceId(parsed.meta.id ?? "my-dataset");
       setValidation(null);
-      setMessage(`已从 ${file.name} 载入题集，可以直接编辑`);
+      setMessage(
+        `已从 ${file.name} 载入 ${parsed.questions.length} 道题，可以直接编辑`,
+      );
     });
   };
 
@@ -155,14 +191,62 @@ export function DatasetPanel({
       );
     });
 
-  const save = () =>
+  /**
+   * 保存要写到哪个文件。
+   *
+   * 改了 id 就当是新题集（按新 id 存）；
+   * 没改 id 但这份题集是从某个文件载入的，就写回那个文件，
+   * 免得磁盘上多出一份内容相同、名字不同的副本。
+   */
+  const targetFile =
+    dataset && sourceFile && dataset.id === sourceId ? sourceFile : "";
+
+  const writeDataset = () =>
     run("save", async () => {
       if (!dataset) throw new Error("先载入或新建一套题集");
-      const result = await api.saveDataset(dataset);
+      const result = await api.saveDataset(dataset, targetFile);
       setMessage(`已保存到 ${result.path}`);
       const refreshed = await api.health();
       onHealthChange(refreshed);
     });
+
+  // 同名文件会被直接覆盖，所以先问一句。
+  const existing = dataset
+    ? (health?.datasets ?? []).find(
+        (item) => item.file === (targetFile || dataset.id),
+      )
+    : undefined;
+
+  const save = () => {
+    if (!dataset) return;
+    if (existing) {
+      setConfirmOpen(true);
+      return;
+    }
+    void writeDataset();
+  };
+
+  const datasetJson = () =>
+    JSON.stringify(
+      dataset ?? { id: "", repo: "", language: "", createdAt: "", questions: [] },
+      null,
+      2,
+    );
+
+  const copyDataset = async () => {
+    const ok = await copyText(datasetJson());
+    setMessage(
+      ok
+        ? "题集 JSON 已复制，可以直接粘给模型或存成文件"
+        : "复制失败，浏览器没给剪贴板权限",
+    );
+  };
+
+  const downloadDataset = () => {
+    if (!dataset) return;
+    downloadText(`${dataset.id || "dataset"}.json`, datasetJson());
+    setMessage(`已下载 ${dataset.id || "dataset"}.json`);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -213,6 +297,8 @@ export function DatasetPanel({
               onClick={() => {
                 setDataset(blankDataset());
                 setSelectedId("");
+                setSourceFile("");
+                setSourceId("");
                 setValidation(null);
                 setMessage("新建了一套空题集，先加题");
               }}
@@ -233,7 +319,31 @@ export function DatasetPanel({
               className="hidden"
               onChange={(event) => void onFile(event.target.files?.[0])}
             />
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!dataset}
+              onClick={() => void copyDataset()}
+            >
+              <ClipboardCopy className="mr-1 size-4" />
+              复制题集 JSON
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!dataset}
+              onClick={downloadDataset}
+            >
+              <Download className="mr-1 size-4" />
+              下载题集
+            </Button>
           </div>
+
+          {!dataset && (
+            <p className="text-xs text-muted-foreground">
+              还没选题集。上面选一套现成的，或者「新建题集」自己录。
+            </p>
+          )}
 
           {dataset && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -304,7 +414,7 @@ export function DatasetPanel({
             <Button
               size="sm"
               variant="outline"
-              disabled={busy !== ""}
+              disabled={busy !== "" || !dataset}
               onClick={() => void validate()}
             >
               {busy === "validate" && (
@@ -314,7 +424,7 @@ export function DatasetPanel({
             </Button>
             <Button
               size="sm"
-              disabled={busy !== ""}
+              disabled={busy !== "" || !dataset}
               onClick={() => void evaluate()}
             >
               {busy === "evaluate" && (
@@ -325,8 +435,8 @@ export function DatasetPanel({
             <Button
               size="sm"
               variant="outline"
-              disabled={busy !== ""}
-              onClick={() => void save()}
+              disabled={busy !== "" || !dataset}
+              onClick={save}
             >
               {busy === "save" && (
                 <Loader2 className="mr-1 size-4 animate-spin" />
@@ -335,10 +445,32 @@ export function DatasetPanel({
             </Button>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            保存的文件名是题集 id（{dataset?.id ?? "my-dataset"}.json）。
-            磁盘上已有的同名文件会被覆盖，改之前先想清楚。
-          </p>
+          {!dataset && (
+            <p className="text-xs text-muted-foreground">
+              先在上面载入或新建一套题集，这三个按钮才能用。
+            </p>
+          )}
+
+          {dataset && (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              {existing ? (
+                <>
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
+                  <span>
+                    保存会写回 harness/datasets/{existing.file}.json，
+                    磁盘上那份同名文件会被整个换掉。
+                  </span>
+                </>
+              ) : (
+                <span>
+                  保存会写到 harness/datasets/{targetFile || dataset.id}.json。
+                  {dataset.questions.length === 0
+                    ? "现在一道题都没有，先加题再保存。"
+                    : `共 ${dataset.questions.length} 道题。`}
+                </span>
+              )}
+            </p>
+          )}
 
           {message && (
             <p className="text-xs text-muted-foreground">{message}</p>
@@ -389,6 +521,24 @@ export function DatasetPanel({
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>覆盖已有的题集文件？</AlertDialogTitle>
+            <AlertDialogDescription>
+              harness/datasets/{existing?.file ?? targetFile ?? dataset?.id}.json
+              已经存在，保存会把它整个换掉。磁盘上那份旧题集不会自动备份。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>先不存</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void writeDataset()}>
+              覆盖保存
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
