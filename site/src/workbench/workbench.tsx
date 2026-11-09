@@ -23,6 +23,7 @@ export function Workbench() {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [tab, setTab] = useState("load");
   const [theme, setTheme] = useTheme();
   const resultRef = useRef<HTMLElement>(null);
 
@@ -97,7 +98,7 @@ node --experimental-strip-types src/cli.ts serve`}
           </div>
         )}
 
-        <Tabs defaultValue="load" className="flex flex-col gap-4">
+        <Tabs value={tab} onValueChange={setTab} className="flex flex-col gap-4">
           <TabsList>
             <TabsTrigger value="load">填数据出图</TabsTrigger>
             <TabsTrigger value="dataset">录题集跑评测</TabsTrigger>
@@ -121,17 +122,20 @@ node --experimental-strip-types src/cli.ts serve`}
           </TabsContent>
         </Tabs>
 
-        <section ref={resultRef} className="flex flex-col gap-4 scroll-mt-20">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
-              结果
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              图表和公开站是同一套组件，数字来自同一份报告
-            </span>
-          </div>
-          <ReportPanel key={version} />
-        </section>
+        {/* 结果区是三个 Tab 共用的，但密钥页跟报告没关系，不显示这块空图表。 */}
+        {tab !== "secrets" && (
+          <section ref={resultRef} className="flex flex-col gap-4 scroll-mt-20">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
+                结果
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                图表和公开站是同一套组件，数字来自同一份报告
+              </span>
+            </div>
+            <ReportPanel key={version} />
+          </section>
+        )}
       </main>
     </div>
   );
