@@ -77,6 +77,78 @@ const PRESETS: Preset[] = [
     profileLabel: "智谱 GLM",
   },
   {
+    id: "ark",
+    label: "豆包（火山方舟）",
+    prefix: "ARK",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    model: "doubao-seed-1-6",
+    profileLabel: "豆包",
+  },
+  {
+    id: "moonshot",
+    label: "Kimi（月之暗面）",
+    prefix: "MOONSHOT",
+    baseUrl: "https://api.moonshot.cn/v1",
+    model: "kimi-k2-turbo-preview",
+    profileLabel: "Kimi",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax（海螺 AI）",
+    prefix: "MINIMAX",
+    baseUrl: "https://api.minimax.cn/v1",
+    model: "MiniMax-M2",
+    profileLabel: "MiniMax",
+  },
+  {
+    id: "qianfan",
+    label: "百度千帆（文心）",
+    prefix: "QIANFAN",
+    baseUrl: "https://qianfan.baidubce.com/v2",
+    model: "ernie-4.5-turbo-128k",
+    profileLabel: "百度千帆",
+  },
+  {
+    id: "hunyuan",
+    label: "腾讯混元",
+    prefix: "HUNYUAN",
+    baseUrl: "https://api.hunyuan.cloud.tencent.com/v1",
+    model: "hunyuan-turbo",
+    profileLabel: "腾讯混元",
+  },
+  {
+    id: "siliconflow",
+    label: "硅基流动（SiliconFlow）",
+    prefix: "SILICON",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    model: "Qwen/Qwen3-8B",
+    profileLabel: "硅基流动",
+  },
+  {
+    id: "stepfun",
+    label: "阶跃星辰",
+    prefix: "STEP",
+    baseUrl: "https://api.stepfun.com/v1",
+    model: "step-2-16k",
+    profileLabel: "阶跃星辰",
+  },
+  {
+    id: "spark",
+    label: "讯飞星火",
+    prefix: "SPARK",
+    baseUrl: "https://spark-api-open.xf-yun.com/v1",
+    model: "4.0Ultra",
+    profileLabel: "讯飞星火",
+  },
+  {
+    id: "yi",
+    label: "零一万物",
+    prefix: "YI",
+    baseUrl: "https://api.lingyiwanwu.com/v1",
+    model: "yi-lightning",
+    profileLabel: "零一万物",
+  },
+  {
     id: "custom",
     label: "自定义（OpenAI 兼容接口）",
     prefix: "",
@@ -96,13 +168,12 @@ interface ProfileResult {
 /**
  * 模型选项上的标记。
  *
- * 已知收费的标一个 ¥，已知免费的直接说免费；
- * 查不到价格就不标——宁可不说，也不标错。
+ * 只有查到「确实免费」的才标免费；查不到价格的一律按收费标 ¥——
+ * 厂商新出的模型多半还没进价目表，标成不花钱会直接误导成本估算。
  */
 function modelOptionLabel(model: SecretModel): string {
-  if (model.paid === true) return `¥ ${model.id}`;
   if (model.paid === false) return `${model.id}（免费）`;
-  return model.id;
+  return `¥ ${model.id}`;
 }
 
 export function SecretsPanel() {
@@ -394,7 +465,7 @@ export function SecretsPanel() {
                     {manualModel ? "改回下拉框挑" : "下拉框里没有？手填模型 id"}
                   </button>
                 ) : (
-                  "先点「测试连通」，就能从这家厂商的可用模型里挑；标 ¥ 的是要花钱的"
+                  "先点「测试连通」，就能从这家厂商的可用模型里挑；带 ¥ 的是要花钱的，只有明确标「免费」的才不花钱"
                 )}
               </span>
             </div>

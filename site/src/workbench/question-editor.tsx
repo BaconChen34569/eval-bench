@@ -39,6 +39,9 @@ const CATEGORIES: QuestionCategory[] = [
 
 const DIFFICULTIES: Difficulty[] = ["easy", "medium", "hard"];
 
+/** 一页放几道题。 */
+const PAGE_SIZE = 10;
+
 function Field({
   label,
   hint,
@@ -83,7 +86,18 @@ export function QuestionEditor({
   const [open, setOpen] = useState<string[]>([]);
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [page, setPage] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const total = dataset.questions.length;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 删题之后当前页可能越界，显示时按实际范围夹一下。
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageStart = currentPage * PAGE_SIZE;
+  const pageQuestions = dataset.questions.slice(
+    pageStart,
+    pageStart + PAGE_SIZE,
+  );
 
   const importFile = async (file: File | undefined) => {
     if (!file) return;
@@ -155,7 +169,9 @@ export function QuestionEditor({
   const addQuestion = () => {
     const next = emptyQuestion(dataset.questions.length + 1);
     onChange({ ...dataset, questions: [...dataset.questions, next] });
-    setOpen((value) => [...value, next.id]);
+    // 新题加在最后，页面跳到它所在的那一页。
+    setPage(Math.floor(dataset.questions.length / PAGE_SIZE));
+    setOpen((value) => [...value, `${next.id}-${dataset.questions.length}`]);
   };
 
   const removeQuestion = (index: number) => {
@@ -180,7 +196,7 @@ export function QuestionEditor({
     const questions = [...dataset.questions];
     questions.splice(index + 1, 0, copy);
     onChange({ ...dataset, questions });
-    setOpen((value) => [...value, copy.id]);
+    setOpen((value) => [...value, `${copy.id}-${index + 1}`]);
   };
 
   return (
@@ -255,7 +271,10 @@ export function QuestionEditor({
         onValueChange={(value: string[]) => setOpen(value)}
         className="rounded-lg border bg-card px-4"
       >
-        {dataset.questions.map((item, index) => (
+        {pageQuestions.map((item, local) => {
+          // 展开状态用全局题号做 key，翻页后还能保持展开。
+          const index = pageStart + local;
+          return (
           <AccordionItem key={`${item.id}-${index}`} value={`${item.id}-${index}`}>
             <AccordionTrigger>
               <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -526,8 +545,51 @@ export function QuestionEditor({
               </div>
             </AccordionContent>
           </AccordionItem>
-        ))}
+          );
+        })}
       </Accordion>
+
+      {total > PAGE_SIZE && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2">
+          <span className="text-xs text-muted-foreground">
+            第 {currentPage + 1} / {pageCount} 页（第{" "}
+            {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, total)} 题，共{" "}
+            {total} 道）
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              上一页
+            </Button>
+            <NativeSelect
+              value={String(currentPage)}
+              onChange={(event) => setPage(Number(event.target.value))}
+              className="w-28"
+            >
+              {Array.from({ length: pageCount }, (_, position) => (
+                <NativeSelectOption
+                  key={position}
+                  value={String(position)}
+                >
+                  第 {position + 1} 页
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage >= pageCount - 1}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              下一页
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
