@@ -165,11 +165,21 @@ cd site && npm ci && npm run build:local
 | `POST /api/validate` | 校验证据行号，回传问题和提示 |
 | `POST /api/evaluate` | 跑检索层评测，回传三种切分策略的指标 |
 | `POST /api/save-dataset` | 把页面上的题集存回 `datasets/`（带 `file` 字段时写回指定文件） |
+| `GET /api/dirs?path=...` | 列目录（只给目录项），标出哪些像代码仓库 |
+| `GET /api/secrets` | 看 `.env` 里有哪些模型档案、哪些字段缺了 |
+| `POST /api/secrets` | 写入密钥/接口地址/模型名到 `.env` |
+| `DELETE /api/secrets` | 清掉某个档案的密钥 |
+| `POST /api/secrets/test` | 用某个档案（或临时传入的密钥）测一次连通性 |
 
 `/api/evaluate` 走的是 `runRetrievalEval`，和 `experiment` 命令同一条代码路径，
 所以工作台上的召回率和命令行跑出来的数字必然一致。
 写题集这一步故意留在页面上：证据要精确到行号，对着源码改比对着 JSON 改快。
 `/api/reports` 和 `/api/report` 只读 `out/` 目录以内的文件，路径越界会被拒绝。
+
+密钥相关的接口不回显密钥内容：状态接口只给「配没配 / 缺哪个字段」，
+写完之后密钥只留在 `.env` 里（文件权限 600，已被 `.gitignore` 忽略）。
+`/api/secrets/test` 允许临时传一个密钥做连通测试，但不会把它写进文件。
+所有接口都要求 Host 是 `127.0.0.1`/`localhost`，并且拒绝来自其他页面的跨站请求。
 
 ## 配置模型
 
