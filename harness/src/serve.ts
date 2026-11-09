@@ -24,7 +24,7 @@ import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION } from "./schema.ts";
 import { buildLlmConfig, listModels } from "./llm.ts";
 import { discoverProfiles } from "./profiles.ts";
-import { lookupBuiltinPrice } from "./pricing.ts";
+import { lookupBuiltinPrice, VENDOR_FREE_MODELS } from "./pricing.ts";
 import type { EvalDataset } from "./schema.ts";
 
 const MIME: Record<string, string> = {
@@ -622,13 +622,19 @@ function describeSecretModel(
  * 用档案里的密钥问一次服务端的模型列表，验证这个 key 通不通。
  *
  * testKey 可以带一个还没保存的 key 进来试：只用这一次，不写盘、不回显。
+ * override 里的接口地址和模型同样只用于这一次测试——
+ * 第一次配一家新服务商时，.env 里还没有它的接口地址，
+ * 光看 .env 就会一直报「还没填接口地址」。
  */
 async function testSecret(
   prefix: string,
   testKey?: string,
+  override?: { baseUrl?: string; model?: string },
 ): Promise<{ ok: boolean; models: SecretModel[]; error?: string }> {
   const values = envRecord(parseEnvFile(await readEnvText()));
   if (testKey) values[`${prefix}_API_KEY`] = testKey;
+  if (override?.baseUrl) values[`${prefix}_BASE_URL`] = override.baseUrl;
+  if (override?.model) values[`${prefix}_MODEL`] = override.model;
   const config = buildLlmConfig(values, prefix);
   if (!config.baseUrl) {
     return { ok: false, models: [], error: "还没填接口地址" };
@@ -648,7 +654,11 @@ async function testSecret(
         }
       : undefined;
   try {
-    const models = await listModels(config);
+    const listed = await listModels(config);
+    const models = [
+      ...listed,
+      ...vendorFreeModels(config.baseUrl).filter((id) => !listed.includes(id)),
+    ];
     return {
       ok: true,
       models: models.map((id) =>
@@ -659,9 +669,38 @@ async function testSecret(
     return {
       ok: false,
       models: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: explainModelListError(error),
     };
   }
+}
+
+/** 这家厂商已知的免费模型，用来补齐没被列出来的那些。 */
+function vendorFreeModels(baseUrl: string): string[] {
+  let host = "";
+  try {
+    host = new URL(baseUrl).host.toLowerCase();
+  } catch {
+    return [];
+  }
+  return VENDOR_FREE_MODELS[host] ?? [];
+}
+
+/**
+ * 把取模型列表的失败翻译成人能看懂的话。
+ *
+ * 有些厂商压根没开放 /models，这时候说「接口地址错了」会把人带偏——
+ * 接口其实是通的，只是列不出模型，手填模型 id 照样能用。
+ */
+function explainModelListError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = /\((\d{3})\)/.exec(message)?.[1];
+  if (status === "404" || status === "410") {
+    return "这家厂商没有开放模型列表接口，请手动填写模型 id";
+  }
+  if (status === "401" || status === "403") {
+    return "密钥没通过鉴权，检查一下是不是复制漏了字符";
+  }
+  return message;
 }
 
 export async function serve(options: ServeOptions): Promise<void> {
@@ -738,8 +777,21 @@ export async function serve(options: ServeOptions): Promise<void> {
 
       if (path === "/api/secrets/test" && req.method === "POST") {
         const body = await readBody(req);
-        const { prefix, testKey } = parseSecretPayload(body);
-        sendJson(res, 200, await testSecret(prefix, testKey));
+        const { prefix, updates, testKey } = parseSecretPayload(body);
+        // 表单里填的接口地址和模型一起带过来，
+        // 第一次配一家新服务商时 .env 里还没有它们。
+        const override = {
+          baseUrl: updates.find((item) => item.field === "BASE_URL")?.value,
+          model: updates.find((item) => item.field === "MODEL")?.value,
+        };
+        sendJson(res, 200, await testSecret(prefix, testKey, override));
+        return;
+      }
+
+      if (path === "/api/secrets/price" && req.method === "GET") {
+        const id = (url.searchParams.get("model") ?? "").trim();
+        if (!id) throw new Error("没给模型 id");
+        sendJson(res, 200, describeSecretModel(id, undefined));
         return;
       }
 

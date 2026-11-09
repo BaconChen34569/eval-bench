@@ -241,10 +241,23 @@ export const api = {
    * 拿档案（或者还没保存的 key）问一次服务端的模型列表。
    *
    * 密钥只在服务端用一次，浏览器拿到的只有模型 id。
+   * baseUrl 和 model 也一起送过去：第一次配一家新服务商时，
+   * .env 里还没有它的接口地址，光看 .env 会一直报「还没填接口地址」。
    */
-  testSecret: (payload: { prefix: string; testKey?: string }) =>
+  testSecret: (payload: {
+    prefix: string;
+    testKey?: string;
+    baseUrl?: string;
+    model?: string;
+  }) =>
     request<SecretTestResult>("/api/secrets/test", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  /** 查一个模型 id 的单价，用来看手填的模型到底要不要花钱。 */
+  secretPrice: (model: string) =>
+    request<SecretModel>(
+      `/api/secrets/price?model=${encodeURIComponent(model)}`,
+    ),
 };

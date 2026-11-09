@@ -176,6 +176,20 @@ function modelOptionLabel(model: SecretModel): string {
   return `¥ ${model.id}`;
 }
 
+/**
+ * 当前选中模型的价格说明。
+ *
+ * 数字只写在这里，列表里用 ¥ 一个符号点出来就够。
+ */
+function priceHint(price: SecretModel | null): string {
+  if (!price) return "";
+  if (price.paid === false) return "免费";
+  if (price.price) {
+    return `¥ 输入 ${price.price.prompt} / 输出 ${price.price.completion} 元（每百万 token）`;
+  }
+  return "查不到价格，先按收费算";
+}
+
 export function SecretsPanel() {
   const [presetId, setPresetId] = useState(PRESETS[0].id);
   const [prefix, setPrefix] = useState(PRESETS[0].prefix);
@@ -193,6 +207,8 @@ export function SecretsPanel() {
   const [busy, setBusy] = useState("");
   /** 表单这一份档案的可用模型，测出来之后填进模型下拉框。 */
   const [models, setModels] = useState<SecretModel[]>([]);
+  /** 当前选中的模型值多少钱：手填的模型 id 也能查到价。 */
+  const [modelPrice, setModelPrice] = useState<SecretModel | null>(null);
   /** 每个档案各自的测试结果，按前缀存，互不干扰。 */
   const [profileResults, setProfileResults] = useState<
     Record<string, ProfileResult>
@@ -209,6 +225,31 @@ export function SecretsPanel() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  // 模型 id 一变就查一次价：手填的模型（比如厂商没列出来的免费 flash）
+  // 也能知道到底要不要花钱。
+  useEffect(() => {
+    const id = model.trim();
+    if (!id) {
+      setModelPrice(null);
+      return;
+    }
+    let alive = true;
+    const timer = setTimeout(() => {
+      void api
+        .secretPrice(id)
+        .then((result) => {
+          if (alive) setModelPrice(result);
+        })
+        .catch(() => {
+          if (alive) setModelPrice(null);
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [model]);
 
   const choosePreset = (id: string) => {
     setPresetId(id);
@@ -268,6 +309,8 @@ export function SecretsPanel() {
       const result = await api.testSecret({
         prefix,
         testKey: apiKey.trim() || undefined,
+        baseUrl: baseUrl.trim() || undefined,
+        model: model.trim() || undefined,
       });
       if (result.ok) {
         setModels(result.models);
@@ -468,6 +511,17 @@ export function SecretsPanel() {
                   "先点「测试连通」，就能从这家厂商的可用模型里挑；带 ¥ 的是要花钱的，只有明确标「免费」的才不花钱"
                 )}
               </span>
+              {priceHint(modelPrice) && (
+                <span
+                  className={
+                    modelPrice?.paid === false
+                      ? "text-sm font-medium text-foreground"
+                      : "text-xs text-muted-foreground"
+                  }
+                >
+                  {priceHint(modelPrice)}
+                </span>
+              )}
             </div>
           </div>
 

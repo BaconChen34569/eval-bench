@@ -28,11 +28,24 @@ export interface ResolvedPrice {
 /**
  * 内置的常见模型价目表，单位：元 / 百万 token。
  *
- * 只收录本项目实际用到的和几个广为人知的模型，
+ * 数字来自各家官方价目页，核对日期写在下面：
+ *   智谱 GLM   docs.bigmodel.cn/cn/guide/start/pricing
+ *   智谱免费模型 docs.bigmodel.cn/cn/guide/start/model-overview
+ *   DeepSeek   api-docs.deepseek.com/quick_start/pricing（取夜间低峰价）
+ *   通义千问   help.aliyun.com/zh/model-studio/billing-for-model-studio
+ *
  * 拿不准的一律不收——宁可让用户自己填，也不要给一个错的数字。
+ * 厂商新出的模型大多还没进这张表，页面上会标成「查不到价格，按收费算」。
  */
 export const BUILTIN_PRICES: Record<string, UnitPrice> = {
+  // DeepSeek
   "deepseek-flash": { prompt: 1, completion: 4, cacheHit: 0.02, currency: "¥" },
+  "deepseek-v4-pro": {
+    prompt: 4.5,
+    completion: 13.5,
+    cacheHit: 0.15,
+    currency: "¥",
+  },
   "deepseek-chat": { prompt: 2, completion: 8, cacheHit: 0.2, currency: "¥" },
   "deepseek-reasoner": {
     prompt: 4,
@@ -40,15 +53,85 @@ export const BUILTIN_PRICES: Record<string, UnitPrice> = {
     cacheHit: 1,
     currency: "¥",
   },
-  "qwen-plus": { prompt: 0.8, completion: 2, cacheHit: 0.08, currency: "¥" },
-  "qwen-turbo": { prompt: 0.3, completion: 1.2, cacheHit: 0.03, currency: "¥" },
+
+  // 智谱 GLM：长上下文档位按最低一档记
+  "glm-5.3": { prompt: 8, completion: 28, cacheHit: 2, currency: "¥" },
+  "glm-5.3-flash": {
+    prompt: 0.8,
+    completion: 2.8,
+    cacheHit: 0.23,
+    currency: "¥",
+  },
+  "glm-5.3-flashx": {
+    prompt: 2,
+    completion: 7,
+    cacheHit: 0.57,
+    currency: "¥",
+  },
+  "glm-5.3-flashx-legal": {
+    prompt: 2,
+    completion: 7,
+    cacheHit: 0.57,
+    currency: "¥",
+  },
+  "glm-5.2": { prompt: 8, completion: 28, cacheHit: 2, currency: "¥" },
+  "glm-5.1": { prompt: 6, completion: 24, currency: "¥" },
+  "glm-5-turbo": { prompt: 5, completion: 22, currency: "¥" },
+  "glm-5": { prompt: 4, completion: 18, currency: "¥" },
+  "glm-4.7": { prompt: 2, completion: 8, currency: "¥" },
+  "glm-4.5": { prompt: 2, completion: 6, cacheHit: 0.4, currency: "¥" },
+  "glm-4.5-air": {
+    prompt: 0.8,
+    completion: 2,
+    cacheHit: 0.16,
+    currency: "¥",
+  },
+
+  // 智谱明确免费的模型：官方写的是输入、输出、缓存全免
+  "glm-4.7-flash": { prompt: 0, completion: 0, currency: "¥" },
+  "glm-4.5-flash": { prompt: 0, completion: 0, currency: "¥" },
   "glm-4-flash": { prompt: 0, completion: 0, currency: "¥" },
+  "glm-4-flash-250414": { prompt: 0, completion: 0, currency: "¥" },
+  "glm-4.6v-flash": { prompt: 0, completion: 0, currency: "¥" },
+  "glm-4.1v-thinking-flash": { prompt: 0, completion: 0, currency: "¥" },
+  "glm-4v-flash": { prompt: 0, completion: 0, currency: "¥" },
+
+  // 通义千问（阿里云百炼）
+  "qwen3.8-max": { prompt: 12, completion: 36, currency: "¥" },
+  "qwen3.7-max": { prompt: 12, completion: 36, currency: "¥" },
+  "qwen3.7-plus": { prompt: 2, completion: 8, currency: "¥" },
+  "qwen3.6-plus": { prompt: 2, completion: 12, currency: "¥" },
+  "qwen3.5-plus": { prompt: 0.8, completion: 4.8, currency: "¥" },
+  "qwen-plus": { prompt: 0.8, completion: 2, cacheHit: 0.08, currency: "¥" },
+  "qwen-max": { prompt: 2.4, completion: 9.6, currency: "¥" },
+  "qwen-turbo": { prompt: 0.3, completion: 1.2, cacheHit: 0.03, currency: "¥" },
+};
+
+/**
+ * 每家厂商域名对应的免费模型。
+ *
+ * 有些厂商的模型列表接口不把免费模型列出来（智谱就是：
+ * /models 只给 12 个付费模型，免费那几个要手动填 id 才用得上）。
+ * 不补上的话，下拉框里永远看不到「免费」的那几个。
+ */
+export const VENDOR_FREE_MODELS: Record<string, string[]> = {
+  "open.bigmodel.cn": [
+    "glm-4.7-flash",
+    "glm-4.5-flash",
+    "glm-4-flash",
+    "glm-4-flash-250414",
+    "glm-4.6v-flash",
+    "glm-4.1v-thinking-flash",
+    "glm-4v-flash",
+  ],
 };
 
 /**
  * 查内置价目表。
  *
- * 先精确匹配，再按前缀匹配（deepseek-chat-0324 这种带日期后缀的也算）。
+ * 先精确匹配，再按前缀匹配：deepseek-chat-0324 这种带日期后缀的算同一个模型。
+ * 前缀只在分隔符边界上续接——glm-5 吃不掉 glm-5.1 和 glm-5.3-flash，
+ * 它们是不同价钱的模型。
  */
 export function lookupBuiltinPrice(modelId: string): UnitPrice | undefined {
   const id = modelId.trim().toLowerCase();
@@ -56,7 +139,7 @@ export function lookupBuiltinPrice(modelId: string): UnitPrice | undefined {
   const exact = BUILTIN_PRICES[id];
   if (exact) return exact;
   const matched = Object.keys(BUILTIN_PRICES)
-    .filter((key) => id.startsWith(key))
+    .filter((key) => id.startsWith(`${key}-`) || id.startsWith(`${key}_`))
     .sort((a, b) => b.length - a.length)[0];
   return matched ? BUILTIN_PRICES[matched] : undefined;
 }
@@ -125,6 +208,9 @@ export function describePrice(
   source: PriceSource,
 ): string {
   if (!price || source === "none") return "未配置单价（成本记为 0）";
+  if (price.prompt === 0 && price.completion === 0) {
+    return source === "builtin" ? "免费（来自内置价目表）" : "免费";
+  }
   const hit =
     price.cacheHit === undefined
       ? "缓存命中同未命中价"

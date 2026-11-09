@@ -169,7 +169,8 @@ cd site && npm ci && npm run build:local
 | `GET /api/secrets` | 看 `.env` 里有哪些模型档案、哪些字段缺了 |
 | `POST /api/secrets` | 写入密钥/接口地址/模型名到 `.env` |
 | `DELETE /api/secrets` | 清掉某个档案的密钥 |
-| `POST /api/secrets/test` | 用某个档案（或临时传入的密钥）测一次连通性 |
+| `POST /api/secrets/test` | 用某个档案（或临时传入的密钥、接口地址）测一次连通性 |
+| `GET /api/secrets/price?model=...` | 查一个模型 id 的单价，用来看手填的模型要不要花钱 |
 
 `/api/evaluate` 走的是 `runRetrievalEval`，和 `experiment` 命令同一条代码路径，
 所以工作台上的召回率和命令行跑出来的数字必然一致。
@@ -178,7 +179,8 @@ cd site && npm ci && npm run build:local
 
 密钥相关的接口不回显密钥内容：状态接口只给「配没配 / 缺哪个字段」，
 写完之后密钥只留在 `.env` 里（文件权限 600，已被 `.gitignore` 忽略）。
-`/api/secrets/test` 允许临时传一个密钥做连通测试，但不会把它写进文件。
+`/api/secrets/test` 允许临时传一个密钥、接口地址和模型做连通测试，
+但不会把它们写进文件——第一次配一家新服务商时，页面上的接口地址就是靠这条路送到服务端的。
 所有接口都要求 Host 是 `127.0.0.1`/`localhost`，并且拒绝来自其他页面的跨站请求。
 
 ## 配置模型
@@ -291,10 +293,15 @@ harness 本身是跨平台的（零第三方依赖，Node 22.13+ 即可），但
 
 ## 成本是怎么算的
 
-**单价不用手填。** 内置了一张价目表（DeepSeek、Qwen、GLM 的常见模型 id），
-`.env` 里没写 `*_PRICE_*` 时就按内置价目算；写了则以 `.env` 为准。
+**单价不用手填。** 内置了一张价目表（DeepSeek、智谱 GLM、通义千问的官方价目，
+含智谱那几个明确免费的 flash 模型），`.env` 里没写 `*_PRICE_*` 时就按内置价目算；
+写了则以 `.env` 为准。
 `node --experimental-strip-types src/cli.ts pricing` 会列出每个档案当前生效的单价
 和它的来源（内置表 / `.env` / 没有）。
+
+价目表的数字来自各家官方价目页（`harness/src/pricing.ts` 里写了出处和核对日期），
+单位是元 / 百万 token。查不到的模型 id 按「没有单价」处理——
+宁可让用户在 `.env` 里补一个真的数字，也不给一个错的。
 
 单价按**每百万 token** 填，三个价目：
 
