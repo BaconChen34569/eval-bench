@@ -48,10 +48,37 @@ export interface GenJob {
   status: "running" | "done" | "error";
   /** 进度日志，页面直接显示 */
   log: string[];
+  /** 结构化进度，页面画进度条用 */
+  progress: GenProgress;
   report?: ExperimentReport;
   error?: string;
   startedAt: string;
   finishedAt?: string;
+}
+
+/**
+ * 任务的进度。
+ *
+ * 页面要回答三个问题：现在跑到哪儿了、还要多久、跑完是什么结果。
+ * 所以这里给的不只是日志行，还有能算百分比的细账。
+ */
+export interface GenProgress {
+  /** 当前在做什么，比如「生成层评测 · 固定窗口 800 字符」 */
+  stage: string;
+  /** 当前阶段已经做完几题 */
+  stageDone: number;
+  /** 当前阶段一共几题 */
+  stageTotal: number;
+  /** 全局完成百分比 0-100 */
+  percent: number;
+  /** 全局已完成的工作量（按题算） */
+  done: number;
+  /** 全局总工作量（按题算） */
+  total: number;
+  /** 已经发出的模型请求数（估算） */
+  calls: number;
+  /** 预计一共要发多少模型请求 */
+  callsEstimate: number;
 }
 
 const jobs = new Map<string, GenJob>();
@@ -78,11 +105,102 @@ export function getJob(id: string): GenJob | undefined {
   return jobs.get(id);
 }
 
+/**
+ * 一次跑动的阶段计划。
+ *
+ * 每个阶段说清楚：这一段做多少题、每题大概发几次模型请求。
+ * 有了计划才能算出百分比——只知道「跑着」是没法让人安心的。
+ */
+interface StagePlan {
+  key: string;
+  label: string;
+  /** 这一阶段一共多少题 */
+  total: number;
+  /** 每题要发几次模型请求（作答一次、judge 一次，就是 2） */
+  callsPerQuestion: number;
+}
+
+/**
+ * 进度账。
+ *
+ * 把各阶段的完成情况合成一个百分比，再带上当前阶段的细账，
+ * 页面就能显示「跑到第几步、第几题、还剩多少」。
+ */
+class ProgressTracker {
+  private readonly plan: StagePlan[];
+  private index = 0;
+  private done = 0;
+  private calls = 0;
+
+  constructor(plan: StagePlan[]) {
+    this.plan = plan;
+  }
+
+  /** 切到某个阶段。 */
+  enter(key: string, label?: string): void {
+    const found = this.plan.findIndex((item) => item.key === key);
+    if (found < 0) return;
+    if (found === this.index) {
+      if (label) this.plan[found].label = label;
+      return;
+    }
+    this.index = found;
+    this.done = 0;
+    if (label) this.plan[found].label = label;
+  }
+
+  /** 当前阶段完成了 absDone 题（绝对值，不是增量）。 */
+  advanceTo(absDone: number, callsPerQuestion: number): void {
+    const stage = this.plan[this.index];
+    if (!stage) return;
+    const delta = Math.max(0, absDone - this.done);
+    this.done = Math.min(stage.total, absDone);
+    this.calls += delta * callsPerQuestion;
+  }
+
+  snapshot(): GenProgress {
+    const stage = this.plan[this.index];
+    const total = this.plan.reduce((sum, item) => sum + item.total, 0);
+    let completed = 0;
+    for (let i = 0; i < this.index; i += 1) completed += this.plan[i].total;
+    completed += this.done;
+    const callsEstimate = this.plan.reduce(
+      (sum, item) => sum + item.total * item.callsPerQuestion,
+      0,
+    );
+    return {
+      stage: stage?.label ?? "收尾",
+      stageDone: this.done,
+      stageTotal: stage?.total ?? 0,
+      percent:
+        total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0,
+      done: completed,
+      total,
+      calls: this.calls,
+      callsEstimate,
+    };
+  }
+}
+
 function pickProfiles(
   env: Record<string, string | undefined>,
   ids: string[],
 ): ReadyProfile[] {
   return ids.map((id) => resolveProfile(env, id));
+}
+
+/** 这次实际要跑多少题：只跑前 N 题时就是 N。 */
+function questionCount(options: GenJobOptions): number {
+  const all = options.dataset.questions.length;
+  if (!options.limit || options.limit <= 0) return all;
+  return Math.min(options.limit, all);
+}
+
+/** judge 自检会抽多少题：只有带人工评分的题才参与。 */
+function judgeCount(options: GenJobOptions): number {
+  return options.dataset.questions.filter(
+    (question) => question.humanScore !== undefined,
+  ).length;
 }
 
 /** 读产物目录里的 report.json，拿它已有的运行记录去复用。 */
@@ -130,10 +248,38 @@ async function runSingle(
   const judge = options.judgeProfile
     ? resolveProfile(env, options.judgeProfile)
     : agent;
+  const questions = questionCount(options);
+  const judged = judgeCount(options);
+
+  const tracker = new ProgressTracker([
+    { key: "retrieval", label: "检索层评测", total: 1, callsPerQuestion: 0 },
+    ...(options.judgeCheck
+      ? [
+          {
+            key: "judge",
+            label: "judge 自检（先验尺子）",
+            total: judged,
+            callsPerQuestion: 1,
+          },
+        ]
+      : []),
+    ...STRATEGY_LIST.map((strategy) => ({
+      key: `strategy:${strategy.id}`,
+      label: `生成层评测 · ${strategy.label}`,
+      total: questions,
+      callsPerQuestion: 2,
+    })),
+  ]);
+  const sync = () => {
+    job.progress = tracker.snapshot();
+  };
+
   job.log.push(
     `被测模型 ${agent.label}（${agent.config.model}），打分模型 ${judge.label}（${judge.config.model}）`,
   );
 
+  tracker.enter("retrieval");
+  sync();
   job.log.push("检索层评测（不调模型，不花钱）…");
   const metrics = await runRetrievalEval({
     dataset: options.dataset,
@@ -146,13 +292,20 @@ async function runSingle(
       `  ${item.strategy.id.padEnd(15)} recall@6 ${(item.recallAt6 * 100).toFixed(1)}%`,
     );
   }
+  tracker.advanceTo(1, 0);
+  sync();
 
   let judgeValidation = NO_JUDGE_CHECK;
   if (options.judgeCheck) {
+    tracker.enter("judge");
+    sync();
     job.log.push("judge 自检：让 judge 给人工参考答案打分…");
     const validation = await validateJudge(options.dataset, judge.config, {
-      onProgress: (done, total) =>
-        job.log.push(`  judge 自检 (${done}/${total})`),
+      onProgress: (done, total) => {
+        tracker.advanceTo(done, 1);
+        sync();
+        job.log.push(`  judge 自检 (${done}/${total})`);
+      },
     });
     judgeValidation = validation.summary;
     job.log.push(
@@ -162,6 +315,8 @@ async function runSingle(
 
   const runs: EvalRun[] = [];
   for (const strategy of STRATEGY_LIST) {
+    tracker.enter(`strategy:${strategy.id}`);
+    sync();
     job.log.push(`生成层评测：${strategy.label}…`);
     const run = await runEvaluation({
       dataset: options.dataset,
@@ -175,8 +330,11 @@ async function runSingle(
       limit: options.limit,
       profile: agent.id,
       profileLabel: agent.label,
-      onProgress: (done, total, message) =>
-        job.log.push(`  (${done}/${total}) ${message}`),
+      onProgress: (done, total, message) => {
+        tracker.advanceTo(done, 2);
+        sync();
+        job.log.push(`  (${done}/${total}) ${message}`);
+      },
     });
     run.origin = "strategy-compare";
     runs.push(run);
@@ -208,18 +366,54 @@ async function runLadderJob(
   const judge = options.judgeProfile
     ? resolveProfile(env, options.judgeProfile)
     : agent;
+  const questions = questionCount(options);
+  const judged = judgeCount(options);
+
+  const tracker = new ProgressTracker([
+    ...(options.judgeCheck
+      ? [
+          {
+            key: "judge",
+            label: "judge 自检（先验尺子）",
+            total: judged,
+            callsPerQuestion: 1,
+          },
+        ]
+      : []),
+    ...LADDER.map((step) => ({
+      key: `step:${step.id}`,
+      label: `迭代阶梯 · ${step.id} ${step.title}`,
+      total: questions,
+      callsPerQuestion: 2,
+    })),
+    { key: "retrieval", label: "检索层评测", total: 1, callsPerQuestion: 0 },
+  ]);
+  const sync = () => {
+    job.progress = tracker.snapshot();
+  };
+
   job.log.push(
     `被测模型 ${agent.label}（${agent.config.model}），打分模型 ${judge.label}（${judge.config.model}）`,
   );
 
   let judgeValidation = NO_JUDGE_CHECK;
   if (options.judgeCheck) {
+    tracker.enter("judge");
+    sync();
     job.log.push("judge 自检：让 judge 给人工参考答案打分…");
     const validation = await validateJudge(options.dataset, judge.config, {
-      onProgress: (done, total) => job.log.push(`  judge 自检 (${done}/${total})`),
+      onProgress: (done, total) => {
+        tracker.advanceTo(done, 1);
+        sync();
+        job.log.push(`  judge 自检 (${done}/${total})`);
+      },
     });
     judgeValidation = validation.summary;
   }
+
+  // 一上手就报出第一轮的名字，别让用户对着「准备中」干等。
+  tracker.enter(`step:${LADDER[0].id}`);
+  sync();
 
   const reuse = await reusableRuns(outDir);
   if (reuse.length) {
@@ -237,6 +431,14 @@ async function runLadderJob(
     limit: options.limit,
     onProgress: (step, done, total, message) =>
       job.log.push(`  ${step.id} (${done}/${total}) ${message}`),
+    onQuestionProgress: (progress) => {
+      tracker.enter(
+        `step:${progress.step.id}`,
+        `迭代阶梯 · ${progress.step.id} ${progress.step.title}`,
+      );
+      tracker.advanceTo(progress.done, progress.reused ? 0 : 2);
+      sync();
+    },
   });
   for (const step of steps) {
     job.log.push(
@@ -244,6 +446,8 @@ async function runLadderJob(
     );
   }
 
+  tracker.enter("retrieval");
+  sync();
   job.log.push("检索层评测（不调模型，不花钱）…");
   const metrics = await runRetrievalEval({
     dataset: options.dataset,
@@ -251,6 +455,8 @@ async function runLadderJob(
     strategies: STRATEGY_LIST,
     retrieval: DEFAULT_RETRIEVAL,
   });
+  tracker.advanceTo(1, 0);
+  sync();
 
   return {
     datasetId: options.dataset.id,
@@ -283,6 +489,29 @@ async function runCompareJob(
   const judges = pickProfiles(env, judgeIds);
   const step =
     LADDER.find((item) => item.id === options.stepId) ?? LADDER[LADDER.length - 1];
+  const questions = questionCount(options);
+
+  const tracker = new ProgressTracker([
+    ...agents.flatMap((agent) => [
+      {
+        key: `agent:${agent.id}`,
+        label: `生成层评测 · ${agent.label}`,
+        total: questions,
+        callsPerQuestion: 2,
+      },
+      ...judges.slice(1).map((judge) => ({
+        key: `agent:${agent.id}:judge:${judge.id}`,
+        label: `换尺子重打 · ${agent.label} × ${judge.label}`,
+        total: questions,
+        callsPerQuestion: 1,
+      })),
+    ]),
+    { key: "retrieval", label: "检索层评测", total: 1, callsPerQuestion: 0 },
+  ]);
+  const sync = () => {
+    job.progress = tracker.snapshot();
+  };
+  sync();
 
   job.log.push(
     `配置：${step.chunking.label}，top-${step.retrieval.topK}，提示词 ${step.promptVersion}`,
@@ -304,8 +533,19 @@ async function runCompareJob(
     reuseRuns: reuse,
     limit: options.limit,
     onProgress: (message) => job.log.push(`  ${message}`),
+    onQuestionProgress: (info) => {
+      tracker.enter(
+        info.judge
+          ? `agent:${info.agent.id}:judge:${info.judge.id}`
+          : `agent:${info.agent.id}`,
+      );
+      tracker.advanceTo(info.done, info.reused ? 0 : info.judge ? 1 : 2);
+      sync();
+    },
   });
 
+  tracker.enter("retrieval");
+  sync();
   job.log.push("检索层评测（不调模型，不花钱）…");
   const metrics = await runRetrievalEval({
     dataset: options.dataset,
@@ -348,6 +588,16 @@ export function startGenJob(
     mode: options.mode,
     status: "running",
     log: [],
+    progress: {
+      stage: "准备中",
+      stageDone: 0,
+      stageTotal: 0,
+      percent: 0,
+      done: 0,
+      total: 0,
+      calls: 0,
+      callsEstimate: 0,
+    },
     startedAt: new Date().toISOString(),
   };
   jobs.set(job.id, job);
@@ -363,6 +613,7 @@ export function startGenJob(
 
       job.report = report;
       job.status = "done";
+      job.progress = { ...job.progress, percent: 100, stage: "已完成" };
       job.log.push("跑完了。");
 
       // 存一份带时间戳的副本：命令行那份 report.json 不动。
@@ -374,6 +625,7 @@ export function startGenJob(
     } catch (error) {
       job.status = "error";
       job.error = error instanceof Error ? error.message : String(error);
+      job.progress = { ...job.progress, stage: "出错了" };
       job.log.push(`出错：${job.error}`);
     } finally {
       job.finishedAt = new Date().toISOString();

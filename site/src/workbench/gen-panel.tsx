@@ -17,6 +17,7 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import { Progress } from "@/components/ui/progress";
 
 import type { ExperimentReport } from "@/data/report";
 import {
@@ -47,6 +48,32 @@ const MODES: { id: GenMode; label: string; hint: string }[] = [
 ];
 
 /**
+ * 等的时候该说的话。
+ *
+ * 生成层一跑就是几分钟，页面光转圈不给信息，人是坐不住的。
+ * 这些话把「为什么要这么久」「现在能不能走开」讲清楚。
+ */
+const WAIT_TIPS = [
+  "每一道题都要被测模型答一次、judge 再打一次分，所以慢是正常的——这就是评测台在干的事。",
+  "可以把这个页面最小化：任务跑在本地服务里，关掉页面它也照跑，回来刷新就能接着看进度。",
+  "预算按「模型请求次数」估：一道题 = 被测一次 + 打分一次。跑完这里会写明实际发了多少次。",
+  "如果卡在第一题别急着停——第一次请求要等模型冷启动，通常比后面的慢得多。",
+  "跑出来的数字会和命令行 experiment / ladder / compare 完全一致，可以直接对照着看。",
+];
+
+/** 把毫秒写成「3 分 12 秒」这样的大白话。 */
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest > 0 ? `${minutes} 分 ${rest} 秒` : `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours} 小时 ${minutes % 60} 分`;
+}
+
+/**
  * 跑生成层。
  *
  * 检索层不花钱，生成层要真调模型——所以这里跑的是和命令行
@@ -74,7 +101,9 @@ export function GenPanel({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [job, setJob] = useState<GenJob | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
   const appliedRef = useRef<string | null>(null);
+  const logRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
     void api
@@ -121,6 +150,34 @@ export function GenPanel({
     return () => clearInterval(timer);
   }, [job, poll]);
 
+  // 跑着的时候每秒走一下表，用来算「已经跑了多久」「大概还要多久」。
+  useEffect(() => {
+    if (!job || job.status !== "running") return;
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [job]);
+
+  // 日志一直往下滚，用户不用手动拖。
+  useEffect(() => {
+    const node = logRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [job?.log.length]);
+
+  // 刷新页面后接上还在跑的任务：进度不该因为刷新一次就丢掉。
+  useEffect(() => {
+    void api
+      .genRunning()
+      .then((current) => {
+        if (!current || current.status !== "running") return;
+        setJob(current);
+        // 任务跑的是哪种跑法，表单就跟着显示哪种，别让人以为跑错了。
+        setMode(current.mode);
+      })
+      .catch(() => {
+        // 服务刚起的时候可能还没准备好，忽略即可
+      });
+  }, []);
+
   // 跑完就把报告送进结果区。同一份报告只送一次。
   useEffect(() => {
     if (!job || job.status !== "done" || !job.report) return;
@@ -131,6 +188,21 @@ export function GenPanel({
 
   const running = job?.status === "running";
   const profiles = options?.profiles ?? [];
+
+  const progress = job?.progress;
+  const elapsedMs = job
+    ? Math.max(
+        0,
+        (job.finishedAt ? new Date(job.finishedAt).getTime() : clock) -
+          new Date(job.startedAt).getTime(),
+      )
+    : 0;
+  // 剩余时间按「已完成部分的平均速度」外推，只是估算，够用户判断要不要等。
+  const etaMs =
+    running && progress && progress.done > 0 && progress.total > progress.done
+      ? (elapsedMs / progress.done) * (progress.total - progress.done)
+      : null;
+  const tip = WAIT_TIPS[Math.floor(elapsedMs / 12000) % WAIT_TIPS.length];
 
   const start = async () => {
     setError(null);
@@ -160,6 +232,16 @@ export function GenPanel({
         mode: started.mode,
         status: "running",
         log: [],
+        progress: {
+          stage: "准备中",
+          stageDone: 0,
+          stageTotal: 0,
+          percent: 0,
+          done: 0,
+          total: 0,
+          calls: 0,
+          callsEstimate: 0,
+        },
         startedAt: started.startedAt,
       });
     } catch (cause) {
@@ -172,14 +254,19 @@ export function GenPanel({
 
   const dataset = health?.datasets.find((item) => item.id === datasetId);
   const questionCount = dataset?.questions ?? 0;
+  // judge 自检跑的是全部带人工评分的题，不受「只跑前几题」限制。
+  const judgeCount = dataset?.judgeQuestions ?? 0;
+  const limitCount = Number(limit) > 0 ? Math.min(Number(limit), questionCount) : questionCount;
   const current = MODES.find((item) => item.id === mode);
   // 粗略估算这次要发多少次模型请求，好让用户知道大概要花多少钱。
+  // 一道题 = 被测模型答一次 + judge 打一次分。
   const calls =
     mode === "single"
-      ? questionCount * 3 * 2 + (judgeCheck ? questionCount : 0)
+      ? limitCount * 3 * 2 + (judgeCheck ? judgeCount : 0)
       : mode === "ladder"
-        ? questionCount * 7 * 2 + (judgeCheck ? questionCount : 0)
-        : questionCount * agentProfiles.length * 2;
+        ? limitCount * 7 * 2 + (judgeCheck ? judgeCount : 0)
+        : limitCount * agentProfiles.length * 2 +
+          limitCount * agentProfiles.length * Math.max(0, judgeProfiles.length - 1);
 
   return (
     <Card>
@@ -412,15 +499,26 @@ export function GenPanel({
           </Button>
           {questionCount > 0 && (
             <span className="text-xs text-muted-foreground">
-              {questionCount} 道题 · 大概 {calls} 次模型请求
+              {limitCount > 0 ? `${limitCount} 道题` : ""} · 大概 {calls} 次模型请求
             </span>
           )}
         </div>
 
         {job && (
-          <div className="flex flex-col gap-2 rounded-lg border bg-card px-3 py-2">
+          <div className="flex flex-col gap-3 rounded-lg border bg-card px-3 py-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={job.status === "done" ? "default" : job.status === "error" ? "destructive" : "secondary"}>
+              <Badge
+                variant={
+                  job.status === "done"
+                    ? "default"
+                    : job.status === "error"
+                      ? "destructive"
+                      : "secondary"
+                }
+              >
+                {running ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : null}
                 {job.status === "running"
                   ? "跑着呢"
                   : job.status === "done"
@@ -430,9 +528,49 @@ export function GenPanel({
               <span className="font-mono text-[11px] text-muted-foreground">
                 {job.id}
               </span>
+              <span className="text-[11px] text-muted-foreground">
+                已用 {formatDuration(elapsedMs)}
+                {etaMs !== null ? ` · 预计还要 ${formatDuration(etaMs)}` : ""}
+              </span>
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-xs font-medium">
+                  {progress?.stage ?? "准备中"}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {progress && progress.stageTotal > 0
+                    ? `第 ${progress.stageDone}/${progress.stageTotal} 题`
+                    : ""}
+                  {progress && progress.total > 0
+                    ? ` · 全局 ${progress.done}/${progress.total}`
+                    : ""}
+                </span>
+              </div>
+              <Progress value={progress?.percent ?? 0} />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                <span>
+                  {progress?.percent ?? 0}% 完成
+                  {progress && progress.callsEstimate > 0
+                    ? ` · 已发出 ${progress.calls}/${progress.callsEstimate} 次模型请求`
+                    : ""}
+                </span>
+                {running && <span>跑完自动出图</span>}
+              </div>
+            </div>
+
+            {running && (
+              <p className="rounded-md bg-secondary/60 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                {tip}
+              </p>
+            )}
+
             {job.log.length > 0 && (
-              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md bg-secondary px-3 py-2 font-mono text-[11px] leading-relaxed">
+              <pre
+                ref={logRef}
+                className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md bg-secondary px-3 py-2 font-mono text-[11px] leading-relaxed"
+              >
                 {job.log.join("\n")}
               </pre>
             )}

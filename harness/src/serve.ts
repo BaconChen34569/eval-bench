@@ -24,7 +24,7 @@ import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION } from "./schema.ts";
 import { buildLlmConfig, listModels, probeChat, type LlmConfig } from "./llm.ts";
 import { discoverProfiles } from "./profiles.ts";
-import { genOptions, getJob, startGenJob, type GenMode } from "./jobs.ts";
+import { genOptions, getJob, runningJob, startGenJob, type GenMode } from "./jobs.ts";
 import { lookupBuiltinPrice } from "./pricing.ts";
 import { isKnownVendor, knownModelsFor } from "./vendors.ts";
 import type { EvalDataset } from "./schema.ts";
@@ -96,6 +96,8 @@ interface DatasetSummary {
   language: string;
   repo: string;
   questions: number;
+  /** 带人工评分的题数：judge 自检会抽这么多题 */
+  judgeQuestions: number;
   createdAt: string;
 }
 
@@ -119,6 +121,9 @@ async function listDatasets(datasetsRoot: string): Promise<DatasetSummary[]> {
         language: raw.language ?? "",
         repo: raw.repo ?? "",
         questions: raw.questions?.length ?? 0,
+        judgeQuestions:
+          raw.questions?.filter((question) => question.humanScore !== undefined)
+            .length ?? 0,
         createdAt: raw.createdAt ?? "",
       });
     } catch {
@@ -1080,6 +1085,12 @@ export async function serve(options: ServeOptions): Promise<void> {
           return;
         }
         sendJson(res, 200, job);
+        return;
+      }
+
+      // 当前正在跑的任务：页面刷新后还能接上进度，不用从头看。
+      if (path === "/api/gen/running" && req.method === "GET") {
+        sendJson(res, 200, runningJob() ?? null);
         return;
       }
 

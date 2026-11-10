@@ -21,6 +21,8 @@ export interface DatasetSummary {
   language: string;
   repo: string;
   questions: number;
+  /** 带人工评分的题数：judge 自检会抽这么多题 */
+  judgeQuestions: number;
   createdAt: string;
 }
 
@@ -162,12 +164,38 @@ export interface GenOptions {
   codeVersion: string;
 }
 
+/**
+ * 任务进度。
+ *
+ * 页面要回答三个问题：现在跑到哪儿了、还要多久、跑完是什么结果，
+ * 所以后端给的不只是日志行，还有能算百分比的细账。
+ */
+export interface GenProgress {
+  /** 当前在做什么，比如「生成层评测 · 固定窗口 800 字符」 */
+  stage: string;
+  /** 当前阶段已经做完几题 */
+  stageDone: number;
+  /** 当前阶段一共几题 */
+  stageTotal: number;
+  /** 全局完成百分比 0-100 */
+  percent: number;
+  /** 全局已完成的工作量（按题算） */
+  done: number;
+  /** 全局总工作量（按题算） */
+  total: number;
+  /** 已经发出的模型请求数 */
+  calls: number;
+  /** 预计一共要发多少模型请求 */
+  callsEstimate: number;
+}
+
 /** 一个生成层任务的实时状态。 */
 export interface GenJob {
   id: string;
   mode: GenMode;
   status: "running" | "done" | "error";
   log: string[];
+  progress: GenProgress;
   report?: ExperimentReport;
   error?: string;
   startedAt: string;
@@ -281,6 +309,14 @@ export const api = {
   /** 查任务的进度和结果。 */
   genJob: (id: string) =>
     request<GenJob>(`/api/gen/job?id=${encodeURIComponent(id)}`),
+
+  /**
+   * 当前正在跑的任务。
+   *
+   * 页面刷新后还能接上进度——生成层一跑就是几分钟，
+   * 总不能让人刷新一次就前功尽弃。
+   */
+  genRunning: () => request<GenJob | null>("/api/gen/running"),
 
   saveDataset: (dataset: WorkDataset, file?: string) =>
     request<{ path: string }>("/api/save-dataset", {

@@ -45,6 +45,21 @@ export interface CompareOptions {
   reuseRuns?: EvalRun[];
   limit?: number;
   onProgress?: (message: string) => void;
+  /**
+   * 每一题跑完时的细账。
+   *
+   * onProgress 只有一句拼好的话，页面画进度条要知道「现在跑到第几题」，
+   * 所以另开一个结构化回调给界面用。
+   */
+  onQuestionProgress?: (info: {
+    agent: ReadyProfile;
+    /** 为空表示是主尺子跟着作答一起跑的那一轮 */
+    judge: ReadyProfile | null;
+    done: number;
+    total: number;
+    /** 这一格复用了已有运行，没有真的调模型 */
+    reused: boolean;
+  }) => void;
 }
 
 /**
@@ -215,6 +230,13 @@ export async function runComparison(
       options.onProgress?.(
         `【${agent.label}】复用已有运行 ${baseRun.runId}（主尺子 ${primary.config.model}）`,
       );
+      options.onQuestionProgress?.({
+        agent,
+        judge: null,
+        done: baseRun.cases.length,
+        total: baseRun.cases.length,
+        reused: true,
+      });
     } else {
       baseRun = await runEvaluation({
         dataset,
@@ -229,8 +251,16 @@ export async function runComparison(
         limit: options.limit,
         profile: agent.id,
         profileLabel: agent.label,
-        onProgress: (done, total, message) =>
-          options.onProgress?.(`【${agent.label}】(${done}/${total}) ${message}`),
+        onProgress: (done, total, message) => {
+          options.onQuestionProgress?.({
+            agent,
+            judge: null,
+            done,
+            total,
+            reused: false,
+          });
+          options.onProgress?.(`【${agent.label}】(${done}/${total}) ${message}`);
+        },
       });
     }
 
@@ -245,10 +275,18 @@ export async function runComparison(
         agentLlm: agent.config,
         judgeLlm: judge.config,
         successThreshold,
-        onProgress: (done, total, message) =>
+        onProgress: (done, total, message) => {
+          options.onQuestionProgress?.({
+            agent,
+            judge,
+            done,
+            total,
+            reused: false,
+          });
           options.onProgress?.(
             `【${agent.label} × ${judge.label}】(${done}/${total}) ${message}`,
-          ),
+          );
+        },
       });
       judgeRuns.set(judge.id, rejudged);
     }

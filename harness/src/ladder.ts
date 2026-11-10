@@ -290,6 +290,19 @@ export interface LadderOptions {
   reuseRuns?: EvalRun[];
   limit?: number;
   onProgress?: (step: LadderConfig, done: number, total: number, message: string) => void;
+  /**
+   * 每一题跑完时的细账。
+   *
+   * onProgress 里混着轮次号，页面画进度条要用「这一轮跑到第几题」，
+   * 所以另开一个回调给界面用。
+   */
+  onQuestionProgress?: (info: {
+    step: LadderConfig;
+    done: number;
+    total: number;
+    /** 这一轮复用了已有运行，没有真的调模型 */
+    reused: boolean;
+  }) => void;
 }
 
 export interface LadderResult {
@@ -325,6 +338,13 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
         LADDER.length,
         `${step.id} 复用已有运行 ${reusable.runId}`,
       );
+      // 复用不调模型，这一轮瞬间就完了，但页面的进度条得往前走。
+      options.onQuestionProgress?.({
+        step,
+        done: reusable.cases.length,
+        total: reusable.cases.length,
+        reused: true,
+      });
     } else {
       const started = Date.now();
       run = await runEvaluation({
@@ -338,13 +358,15 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
         runId: `ladder-${step.id}-${started}`,
         promptVersion: step.promptVersion,
         limit: options.limit,
-        onProgress: (done, total, message) =>
+        onProgress: (done, total, message) => {
+          options.onQuestionProgress?.({ step, done, total, reused: false });
           options.onProgress?.(
             step,
             position + 1,
             LADDER.length,
             `${step.id} (${done}/${total}) ${message}`,
-          ),
+          );
+        },
       });
       run.origin = "ladder";
       run.ladderStepId = step.id;
