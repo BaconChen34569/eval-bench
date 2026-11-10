@@ -135,6 +135,45 @@ export interface EvaluateResult {
   strategies: StrategyMetrics[];
 }
 
+/** 生成层的三种跑法。 */
+export type GenMode = "single" | "ladder" | "compare";
+
+/** 一个配全了的模型档案，不含密钥。 */
+export interface GenProfile {
+  id: string;
+  label: string;
+  model: string;
+  price?: { prompt: number; completion: number; currency: string };
+  priceSource: string;
+}
+
+/** 迭代阶梯的一轮配置。 */
+export interface GenLadderStep {
+  id: string;
+  title: string;
+  chunking: string;
+  topK: number;
+  promptVersion: string;
+}
+
+export interface GenOptions {
+  profiles: GenProfile[];
+  ladder: GenLadderStep[];
+  codeVersion: string;
+}
+
+/** 一个生成层任务的实时状态。 */
+export interface GenJob {
+  id: string;
+  mode: GenMode;
+  status: "running" | "done" | "error";
+  log: string[];
+  report?: ExperimentReport;
+  error?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
 /** 一道题，和 harness/src/schema.ts 里的 EvalQuestion 对应。 */
 export interface WorkQuestion {
   id: string;
@@ -211,6 +250,37 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ dataset, repoRoot }),
     }),
+
+  /** 可用的模型档案和阶梯轮次，用来填生成层的表单。 */
+  genOptions: () => request<GenOptions>("/api/gen/options"),
+
+  /**
+   * 起一个生成层任务。
+   *
+   * 生成层要真的调模型，一轮几分钟，HTTP 等不起，
+   * 所以这里只负责起任务，进度靠 genJob 轮询。
+   */
+  startGen: (payload: {
+    mode: GenMode;
+    datasetId?: string;
+    dataset?: WorkDataset;
+    repoRoot?: string;
+    agentProfile?: string;
+    judgeProfile?: string;
+    agentProfiles?: string[];
+    judgeProfiles?: string[];
+    limit?: number;
+    judgeCheck?: boolean;
+    stepId?: string;
+  }) =>
+    request<{ jobId: string; mode: GenMode; startedAt: string }>(
+      "/api/gen/start",
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+
+  /** 查任务的进度和结果。 */
+  genJob: (id: string) =>
+    request<GenJob>(`/api/gen/job?id=${encodeURIComponent(id)}`),
 
   saveDataset: (dataset: WorkDataset, file?: string) =>
     request<{ path: string }>("/api/save-dataset", {

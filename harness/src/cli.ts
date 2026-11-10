@@ -817,7 +817,7 @@ async function main(): Promise<void> {
     } catch {
       throw new Error(
         `还没构建本地工作台：${workbenchRoot} 里没有 local.html。\n` +
-          "先构建一次：cd site && npm ci && npm run build:local",
+          "先构建一次：cd site && npm ci && npm run build",
       );
     }
 

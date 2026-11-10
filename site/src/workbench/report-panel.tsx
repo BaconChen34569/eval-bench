@@ -8,6 +8,8 @@ import {
 import { OutcomeMatrix } from "@/components/eval/outcome-matrix";
 import { QuestionExplorer } from "@/components/eval/question-explorer";
 import { ExportButtons } from "@/components/eval/export-buttons";
+import { LadderSection } from "@/components/eval/ladder-section";
+import { ModelComparisonSection } from "@/components/eval/model-comparison-section";
 import {
   StrategyCostChart,
   StrategyQualityChart,
@@ -15,6 +17,8 @@ import {
 import {
   formatNumber,
   formatPercent,
+  ladder,
+  modelComparison,
   questions,
   report,
   runs,
@@ -30,8 +34,8 @@ import {
 export function ReportPanel({
   variant,
 }: {
-  /** 哪个模块的结果区：两个模块各自有各自的空状态引导。 */
-  variant: "load" | "dataset";
+  /** 哪个模块的结果区：每个模块各自有各自的空状态引导。 */
+  variant: "load" | "dataset" | "gen";
 }) {
   if (strategies.length === 0) {
     return (
@@ -49,12 +53,22 @@ export function ReportPanel({
               </li>
             </ul>
           </>
-        ) : (
+        ) : variant === "dataset" ? (
           <>
             <p className="mt-2">这个模块的结果来自你在这里跑的评测：</p>
             <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
               <li>上面录几道题，先点「校验证据」确认行号没抄错；</li>
               <li>再点「跑检索评测」，结果会直接送到这里。</li>
+            </ul>
+          </>
+        ) : (
+          <>
+            <p className="mt-2">这个模块的结果来自生成层评测：</p>
+            <ul className="mt-2 flex list-disc flex-col gap-1 pl-5">
+              <li>上面选好题集和模型，点「开始跑」；</li>
+              <li>
+                跑完的策略总览、胜负矩阵、迭代阶梯和多模型对比都会送到这里。
+              </li>
             </ul>
           </>
         )}
@@ -168,6 +182,34 @@ export function ReportPanel({
           </CardHeader>
           <CardContent>
             <OutcomeMatrix />
+          </CardContent>
+        </Card>
+      )}
+
+      {ladder.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">迭代阶梯</CardTitle>
+            <CardDescription>
+              工具自己一轮轮改好，每轮只改一个变量，用同一套协议重跑。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LadderSection />
+          </CardContent>
+        </Card>
+      )}
+
+      {modelComparison && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">多模型对比</CardTitle>
+            <CardDescription>
+              同一份配置换被测模型，再用好几把尺子各量一遍。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ModelComparisonSection />
           </CardContent>
         </Card>
       )}

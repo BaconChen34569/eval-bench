@@ -24,6 +24,7 @@ import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION } from "./schema.ts";
 import { buildLlmConfig, listModels, probeChat, type LlmConfig } from "./llm.ts";
 import { discoverProfiles } from "./profiles.ts";
+import { genOptions, getJob, startGenJob, type GenMode } from "./jobs.ts";
 import { lookupBuiltinPrice } from "./pricing.ts";
 import { isKnownVendor, knownModelsFor } from "./vendors.ts";
 import type { EvalDataset } from "./schema.ts";
@@ -1008,6 +1009,77 @@ export async function serve(options: ServeOptions): Promise<void> {
           codeVersion: CODE_VERSION,
           strategies,
         });
+        return;
+      }
+
+      if (path === "/api/gen/options" && req.method === "GET") {
+        sendJson(res, 200, genOptions(process.env));
+        return;
+      }
+
+      if (path === "/api/gen/start" && req.method === "POST") {
+        const body = (await readBody(req)) as {
+          mode?: GenMode;
+          datasetId?: string;
+          dataset?: EvalDataset;
+          repoRoot?: string;
+          agentProfile?: string;
+          judgeProfile?: string;
+          agentProfiles?: string[];
+          judgeProfiles?: string[];
+          limit?: number;
+          judgeCheck?: boolean;
+          stepId?: string;
+        };
+        const mode = body.mode;
+        if (mode !== "single" && mode !== "ladder" && mode !== "compare") {
+          throw new Error("模式只能是 single / ladder / compare");
+        }
+        const repoRoot = body.repoRoot?.trim() || defaultRepoRoot;
+
+        let dataset = body.dataset;
+        if (!dataset) {
+          const id = body.datasetId?.trim();
+          if (!id) throw new Error("没给题集");
+          const file = await resolveDatasetFile(datasetsRoot, id);
+          dataset = JSON.parse(await readFile(file, "utf8")) as EvalDataset;
+        }
+        if (!dataset.questions?.length) {
+          throw new Error("这份题集一道题都没有");
+        }
+
+        const job = startGenJob(
+          {
+            mode,
+            dataset,
+            repoRoot,
+            agentProfile: body.agentProfile?.trim() || undefined,
+            judgeProfile: body.judgeProfile?.trim() || undefined,
+            agentProfiles: (body.agentProfiles ?? []).filter(Boolean),
+            judgeProfiles: (body.judgeProfiles ?? []).filter(Boolean),
+            limit: Number(body.limit) > 0 ? Number(body.limit) : undefined,
+            judgeCheck: body.judgeCheck !== false,
+            stepId: body.stepId?.trim() || undefined,
+          },
+          process.env,
+          OUT_DIR,
+        );
+        sendJson(res, 200, {
+          jobId: job.id,
+          mode: job.mode,
+          startedAt: job.startedAt,
+        });
+        return;
+      }
+
+      if (path === "/api/gen/job" && req.method === "GET") {
+        const id = url.searchParams.get("id") ?? "";
+        const job = getJob(id);
+        if (!job) {
+          sendJson(res, 404, { error: "没有这个任务" });
+          return;
+        }
+        sendJson(res, 200, job);
         return;
       }
 

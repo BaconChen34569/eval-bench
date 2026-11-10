@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { Markdown } from "@/components/eval/markdown";
 import { cn } from "@/lib/utils";
 import {
@@ -27,12 +32,16 @@ const CATEGORIES: (QuestionCategory | "all")[] = [
   "convention",
 ];
 
+/** 一页放几道题。 */
+const PAGE_SIZE = 10;
+
 export function QuestionExplorer() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<QuestionCategory | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [runId, setRunId] = useState(bestRun?.runId ?? "");
   const [expandedAnswer, setExpandedAnswer] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -45,6 +54,15 @@ export function QuestionExplorer() {
       );
     });
   }, [query, category, questions]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  // 换关键词或换类别后当前页可能越界，翻回第一页更符合预期。
+  useEffect(() => {
+    setPage(0);
+  }, [query, category]);
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageStart = currentPage * PAGE_SIZE;
+  const pageQuestions = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-6">
@@ -77,7 +95,7 @@ export function QuestionExplorer() {
       </div>
 
       <ul className="flex flex-col gap-2">
-        {filtered.map((item) => {
+        {pageQuestions.map((item) => {
           const open = expanded === item.questionId;
           const missed = strategies.filter((strategy) => {
             const found = strategy.cases.find(
@@ -390,6 +408,45 @@ export function QuestionExplorer() {
         <p className="py-10 text-center text-sm text-muted-foreground">
           没有匹配的题目，换个关键词试试。
         </p>
+      )}
+
+      {filtered.length > PAGE_SIZE && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2">
+          <span className="text-xs text-muted-foreground">
+            第 {currentPage + 1} / {pageCount} 页（第{" "}
+            {pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filtered.length)} 题，
+            共 {filtered.length} 道）
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              上一页
+            </Button>
+            <NativeSelect
+              value={String(currentPage)}
+              onChange={(event) => setPage(Number(event.target.value))}
+              className="w-28"
+            >
+              {Array.from({ length: pageCount }, (_, position) => (
+                <NativeSelectOption key={position} value={String(position)}>
+                  第 {position + 1} 页
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage >= pageCount - 1}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              下一页
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

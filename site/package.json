@@ -10,7 +10,7 @@
     "predev": "node scripts/check-node.mjs",
     "prebuild": "node scripts/check-node.mjs",
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && node scripts/build.mjs",
+    "build": "tsc --noEmit && node scripts/build.mjs && node scripts/build-local.mjs",
     "build:local": "tsc --noEmit && node scripts/build-local.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "dev:function": "deno run --allow-net=127.0.0.1:8000 dev/function-local.ts",

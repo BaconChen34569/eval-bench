@@ -28,8 +28,11 @@ The build fixes `NODE_ENV=production` before loading Vite, independently of the 
 打开就是填数据和看结果，或者录题集跑评测，不用先读一遍介绍。
 
 ```sh
-npm run build:local     # 输出到 dist-local/，资源在 local-assets/
+npm run build          # 输出到 dist/（发布用）和 dist-local/（工作台）
+npm run build:local    # 只出 dist-local/，资源在 local-assets/
 ```
+
+`npm run build` 一次产出两份：公开站进 `dist/`，本地工作台进 `dist-local/`。
 
 它和线上站共用同一套组件与同一份 `data/report.json` 契约：
 数据层用 `setReport()` 在运行时换数据，所以换一份报告不用改任何组件。

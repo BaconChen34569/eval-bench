@@ -362,7 +362,7 @@ cd ../site && npm run dev
 
 多次跑不会互相覆盖：每次写报告都会在 `harness/out/history/` 留一份带时间戳的副本，旧结果翻得回来。
 
-不想走命令行的话还有一条路：`cd site && npm ci && npm run build:local`，然后 `cd ../harness && node --experimental-strip-types src/cli.ts serve`，浏览器打开 http://127.0.0.1:8787/ 就是本地工作台——填数据出图、录题集、校验证据、跑检索评测都在一个页面里，没有介绍内容。服务只监听 127.0.0.1。命令行跑完的报告不用再手动拷，工作台里点「载入 report.json」直接从 `harness/out/` 读；题集那边可以先「下载模板」交给 AI 出题、审完再把 JSON 导回来，也可以一键复制出题提示词让 AI 照着写。
+不想走命令行的话还有一条路：`cd site && npm ci && npm run build`，然后 `cd ../harness && node --experimental-strip-types src/cli.ts serve`，浏览器打开 http://127.0.0.1:8787/ 就是本地工作台——填数据出图、录题集、校验证据、跑检索评测都在一个页面里，没有介绍内容。服务只监听 127.0.0.1。命令行跑完的报告不用再手动拷，工作台里点「载入 report.json」直接从 `harness/out/` 读；题集那边可以先「下载模板」交给 AI 出题、审完再把 JSON 导回来，也可以一键复制出题提示词让 AI 照着写。
 
 **Windows 用户**：第 1 步换成 `powershell -ExecutionPolicy Bypass -File corpus\fetch.ps1`（和 bash 版产出的语料逐字节一致），后面的命令写成一行、不用 `\` 续行；并且**必须先 `cd harness`**——`.env` 是按当前工作目录找的。还有两处最容易踩：**cmd 里没有 `cp`**，第 2 步和第 8 步要改成 `copy .env.example .env` 和 `copy out\report.json ..\site\data\report.json`；以及控制台 GBK 乱码、`ExperimentalWarning` 被渲染成红色假错误、`.ps1` 要存成带 BOM 的 UTF-8。站点「怎么复现」那一节把 Windows 和 macOS/Linux 的命令逐条分开给了，每条都能单独复制。
 

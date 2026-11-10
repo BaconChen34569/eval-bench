@@ -14,8 +14,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 import { setReport, type ExperimentReport } from "@/data/report";
+import { cn } from "@/lib/utils";
 import { api, type ReportFile } from "@/src/workbench/api";
 import { countText, formatJson } from "@/src/workbench/json";
+
+/**
+ * 超过这个字符数，粘贴框就固定高度改成滚动。
+ *
+ * 报告 JSON 排完版往往上万字，框子跟着长会把下面的按钮顶出屏幕。
+ */
+const SCROLL_THRESHOLD = 600;
 
 /** 只认得它该有的那几个字段，别的随便。 */
 function parseReport(text: string): ExperimentReport {
@@ -146,6 +154,7 @@ export function LoadPanel({
   };
 
   const stats = countText(text);
+  const scrollable = text.length > SCROLL_THRESHOLD;
   const current = files.find((item) => item.name === "report.json");
   const reports = files.filter(
     (item) => item.kind === "report" && !item.isHistory,
@@ -308,7 +317,10 @@ export function LoadPanel({
               if (result.ok) setText(result.text);
             }}
             placeholder='{"datasetId":"flask-v1","repo":"Flask 3.1.3","strategies":[...]}'
-            className="min-h-40 font-mono text-xs leading-relaxed"
+            className={cn(
+              "min-h-40 font-mono text-xs leading-relaxed",
+              scrollable && "max-h-72 overflow-y-auto",
+            )}
             spellCheck={false}
           />
           <div className="flex flex-wrap items-center gap-2">
@@ -322,6 +334,11 @@ export function LoadPanel({
             <span className="text-xs text-muted-foreground">
               {stats.lines} 行 · {stats.chars} 字符
             </span>
+            {scrollable && (
+              <span className="text-xs text-muted-foreground">
+                内容较长，框内可以上下滚动。
+              </span>
+            )}
           </div>
         </div>
 

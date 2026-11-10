@@ -68,10 +68,11 @@ const LOCAL_WORKBENCH_STEPS: CommandStep[] = [
     id: "lb-build",
     title: "1. 构建本地工具页（只做一次）",
     cwd: "eval-bench",
-    lines: ["cd site", "npm ci", "npm run build:local"],
+    lines: ["cd site", "npm ci", "npm run build"],
     note: (
       <>
-        产物写在 <code className="font-mono">site\\dist-local</code>，不进发布包。
+        产物写在 <code className="font-mono">site\\dist</code>（发布用）和{" "}
+        <code className="font-mono">site\\dist-local</code>（工作台，不进发布包）。
       </>
     ),
   },

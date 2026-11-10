@@ -9,6 +9,7 @@ import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 import { setReport, emptyReport, type ExperimentReport } from "@/data/report";
 import { api, type Health } from "@/src/workbench/api";
 import { DatasetPanel } from "@/src/workbench/dataset-panel";
+import { GenPanel } from "@/src/workbench/gen-panel";
 import { LoadPanel } from "@/src/workbench/load-panel";
 import { ReportPanel } from "@/src/workbench/report-panel";
 import { SecretsPanel } from "@/src/workbench/secrets-panel";
@@ -25,13 +26,15 @@ export function Workbench() {
   const [version, setVersion] = useState(0);
   const [tab, setTab] = useState("load");
   /**
-   * 两份结果各归各的模块：
-   * 「填数据出图」载入的报告和「录题集跑评测」跑出来的报告互不串台。
+   * 三份结果各归各的模块：
+   * 「填数据出图」载入的报告、「录题集跑评测」跑出来的报告、
+   * 「跑生成层」跑出来的报告互不串台。
    */
   const [reports, setReports] = useState<{
     load: ExperimentReport | null;
     dataset: ExperimentReport | null;
-  }>({ load: null, dataset: null });
+    gen: ExperimentReport | null;
+  }>({ load: null, dataset: null, gen: null });
   const [theme, setTheme] = useTheme();
   const resultRef = useRef<HTMLElement>(null);
 
@@ -51,7 +54,7 @@ export function Workbench() {
   // 这样组件里 useMemo 缓存的旧结果不会留在屏幕上。
   const applyReport = (
     next: ExperimentReport,
-    source: "load" | "dataset",
+    source: "load" | "dataset" | "gen",
   ) => {
     setReports((prev) => ({ ...prev, [source]: next }));
     setReport(next);
@@ -67,7 +70,12 @@ export function Workbench() {
   const switchTab = (next: string) => {
     setTab(next);
     if (next === "secrets") return;
-    const target = next === "load" ? reports.load : reports.dataset;
+    const target =
+      next === "load"
+        ? reports.load
+        : next === "dataset"
+          ? reports.dataset
+          : reports.gen;
     setReport(target ?? emptyReport());
     setVersion((value) => value + 1);
   };
@@ -124,6 +132,7 @@ node --experimental-strip-types src/cli.ts serve`}
           <TabsList>
             <TabsTrigger value="load">填数据出图</TabsTrigger>
             <TabsTrigger value="dataset">录题集跑评测</TabsTrigger>
+            <TabsTrigger value="gen">跑生成层</TabsTrigger>
             <TabsTrigger value="secrets">模型密钥</TabsTrigger>
           </TabsList>
 
@@ -149,6 +158,18 @@ node --experimental-strip-types src/cli.ts serve`}
             />
           </TabsContent>
 
+          <TabsContent value="gen" className="flex flex-col gap-4">
+            <GenPanel
+              health={health}
+              onReport={(next) => applyReport(next, "gen")}
+            />
+            <ResultSection
+              variant="gen"
+              resultRef={resultRef}
+              version={version}
+            />
+          </TabsContent>
+
           <TabsContent value="secrets" className="flex flex-col gap-4">
             <SecretsPanel />
           </TabsContent>
@@ -169,7 +190,7 @@ function ResultSection({
   resultRef,
   version,
 }: {
-  variant: "load" | "dataset";
+  variant: "load" | "dataset" | "gen";
   resultRef: RefObject<HTMLElement | null>;
   version: number;
 }) {

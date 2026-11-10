@@ -143,10 +143,10 @@ node --experimental-strip-types src/cli.ts serve --port 8787
 
 想翻旧结果就从 `out/history/` 里挑。
 
-`serve` 需要先把工作台页面构建出来（只做一次）：
+`serve` 需要先把页面构建出来（只做一次）：
 
 ```bash
-cd site && npm ci && npm run build:local
+cd site && npm ci && npm run build
 ```
 
 服务只监听 `127.0.0.1`。两个地址：`/` 是工作台（填数据、录题集、跑评测），
@@ -164,6 +164,9 @@ cd site && npm ci && npm run build:local
 | `GET /api/report?file=...` | 读一份评测产物 |
 | `POST /api/validate` | 校验证据行号，回传问题和提示 |
 | `POST /api/evaluate` | 跑检索层评测，回传三种切分策略的指标 |
+| `GET /api/gen/options` | 可用的模型档案和阶梯轮次，页面用它填生成层的表单 |
+| `POST /api/gen/start` | 起一个生成层任务（单模型 / 迭代阶梯 / 多模型对比），回传 jobId |
+| `GET /api/gen/job?id=...` | 查生成层任务的进度、日志和最终报告 |
 | `POST /api/save-dataset` | 把页面上的题集存回 `datasets/`（带 `file` 字段时写回指定文件） |
 | `GET /api/dirs?path=...` | 列目录（只给目录项），标出哪些像代码仓库 |
 | `GET /api/secrets` | 看 `.env` 里有哪些模型档案、哪些字段缺了 |
@@ -178,6 +181,14 @@ cd site && npm ci && npm run build:local
 所以工作台上的召回率和命令行跑出来的数字必然一致。
 写题集这一步故意留在页面上：证据要精确到行号，对着源码改比对着 JSON 改快。
 `/api/reports` 和 `/api/report` 只读 `out/` 目录以内的文件，路径越界会被拒绝。
+
+生成层要真的调模型，一轮就是几分钟，HTTP 请求等不起，
+所以走「起一个任务 + 轮询状态」：`POST /api/gen/start` 起任务，
+`GET /api/gen/job` 拿进度和最终报告。任务背后是 `runEvaluation`、
+`runLadder`、`runComparison`——和命令行的 `experiment` / `ladder` / `compare`
+是同一套代码，出来的数字可以直接和站上已发布的数字对照。
+一次只允许一个任务在跑（每跑一次都是真花钱）。
+结果会额外存一份带时间戳的副本到 `out/`，不覆盖命令行跑出来的 `report.json`。
 
 模型列表和测连通是两件事：选模型用的是内置的厂商型号表（`src/vendors.ts`），
 不用密钥也能列；「测试连通」才是拿当前配置真去问一次模型，
