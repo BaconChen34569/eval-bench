@@ -123,6 +123,8 @@ export interface SecretModelsResult {
   known?: boolean;
   models: SecretModel[];
   error?: string;
+  /** 这次没填密钥，用的是 .env 里存着的那把 */
+  usedStoredKey?: boolean;
 }
 
 export interface EvaluateResult {

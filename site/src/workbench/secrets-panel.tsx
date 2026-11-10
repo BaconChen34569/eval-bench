@@ -326,14 +326,20 @@ export function SecretsPanel() {
         baseUrl: baseUrl.trim() || undefined,
       });
       if (!result.ok) {
-        setError(result.error ?? "拉不到模型列表");
+        setError(`拉取最新列表：${result.error ?? "拉不到模型列表"}`);
         return;
       }
       setModels(result.models);
       setManualModel(false);
-      setMessage(`从服务商拉到了 ${result.models.length} 个可用模型。`);
+      setMessage(
+        `从服务商拉到了 ${result.models.length} 个可用模型。${
+          result.usedStoredKey ? "（用的是 .env 里存着的密钥）" : ""
+        }`,
+      );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        `拉取最新列表：${cause instanceof Error ? cause.message : String(cause)}`,
+      );
     } finally {
       setBusy("");
     }
@@ -366,7 +372,9 @@ export function SecretsPanel() {
         `已存进 ${result.envPath}。命令行跑评测时会直接读它，不用再手改文件。`,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        `保存：${cause instanceof Error ? cause.message : String(cause)}`,
+      );
     } finally {
       setBusy("");
     }
@@ -384,7 +392,7 @@ export function SecretsPanel() {
         model: model.trim() || undefined,
       });
       if (!result.ok) {
-        setError(result.error ?? "连不上");
+        setError(`测试连通：${result.error ?? "连不上"}`);
         return;
       }
       const cost = result.price
@@ -396,7 +404,9 @@ export function SecretsPanel() {
         `配置可用：${result.model} 应答 ${result.latencyMs ?? 0} ms${cost}。`,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        `测试连通：${cause instanceof Error ? cause.message : String(cause)}`,
+      );
     } finally {
       setBusy("");
     }

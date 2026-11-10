@@ -643,17 +643,25 @@ async function configForTest(
   values: Record<string, string>;
   /** .env 里这个档案原本配的模型，不含本次测试的覆盖值 */
   envModel: string;
+  /** 这次实际用的是 .env 里存着的密钥，不是这次传进来的 */
+  usedStoredKey: boolean;
 }> {
   const values = envRecord(parseEnvFile(await readEnvText()));
   const envModel = values[`${prefix}_MODEL`]?.trim() ?? "";
+  const storedKey = values[`${prefix}_API_KEY`]?.trim() ?? "";
+  let usedStoredKey = false;
   if (options?.useStoredKey) {
-    if (testKey) values[`${prefix}_API_KEY`] = testKey;
+    if (testKey) {
+      values[`${prefix}_API_KEY`] = testKey;
+    } else {
+      usedStoredKey = Boolean(storedKey);
+    }
   } else {
     values[`${prefix}_API_KEY`] = testKey ?? "";
   }
   if (override?.baseUrl) values[`${prefix}_BASE_URL`] = override.baseUrl;
   if (override?.model) values[`${prefix}_MODEL`] = override.model;
-  return { config: buildLlmConfig(values, prefix), values, envModel };
+  return { config: buildLlmConfig(values, prefix), values, envModel, usedStoredKey };
 }
 
 /**
@@ -766,8 +774,14 @@ async function listSecretModels(
   prefix: string,
   testKey?: string,
   override?: { baseUrl?: string; model?: string },
-): Promise<{ ok: boolean; models: SecretModel[]; error?: string }> {
-  const { config, values, envModel } = await configForTest(
+): Promise<{
+  ok: boolean;
+  models: SecretModel[];
+  error?: string;
+  /** 这次没传密钥，用的是 .env 里存着的那把 */
+  usedStoredKey?: boolean;
+}> {
+  const { config, values, envModel, usedStoredKey } = await configForTest(
     prefix,
     testKey,
     override,
@@ -788,6 +802,7 @@ async function listSecretModels(
     ];
     return {
       ok: true,
+      usedStoredKey,
       models: models.map((id) =>
         describeSecretModel(
           id,
