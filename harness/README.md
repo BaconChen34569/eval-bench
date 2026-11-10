@@ -169,7 +169,9 @@ cd site && npm ci && npm run build:local
 | `GET /api/secrets` | 看 `.env` 里有哪些模型档案、哪些字段缺了 |
 | `POST /api/secrets` | 写入密钥/接口地址/模型名到 `.env` |
 | `DELETE /api/secrets` | 清掉某个档案的密钥 |
-| `POST /api/secrets/test` | 用某个档案（或临时传入的密钥、接口地址）测一次连通性 |
+| `POST /api/secrets/test` | 用当前配置（档案 + 临时密钥/接口地址/模型）真的问一次模型，看这套配置能不能用 |
+| `GET /api/secrets/models?baseUrl=...` | 这家厂商已知的模型列表，不需要密钥 |
+| `POST /api/secrets/models` | 用密钥向服务商要一份最新的模型列表 |
 | `GET /api/secrets/price?model=...` | 查一个模型 id 的单价，用来看手填的模型要不要花钱 |
 
 `/api/evaluate` 走的是 `runRetrievalEval`，和 `experiment` 命令同一条代码路径，
@@ -177,9 +179,13 @@ cd site && npm ci && npm run build:local
 写题集这一步故意留在页面上：证据要精确到行号，对着源码改比对着 JSON 改快。
 `/api/reports` 和 `/api/report` 只读 `out/` 目录以内的文件，路径越界会被拒绝。
 
+模型列表和测连通是两件事：选模型用的是内置的厂商型号表（`src/vendors.ts`），
+不用密钥也能列；「测试连通」才是拿当前配置真去问一次模型，
+接口地址、密钥、模型 id 三样都要对才算通过。
+
 密钥相关的接口不回显密钥内容：状态接口只给「配没配 / 缺哪个字段」，
 写完之后密钥只留在 `.env` 里（文件权限 600，已被 `.gitignore` 忽略）。
-`/api/secrets/test` 允许临时传一个密钥、接口地址和模型做连通测试，
+`/api/secrets/test` 和 `POST /api/secrets/models` 允许临时传一个密钥、接口地址和模型，
 但不会把它们写进文件——第一次配一家新服务商时，页面上的接口地址就是靠这条路送到服务端的。
 所有接口都要求 Host 是 `127.0.0.1`/`localhost`，并且拒绝来自其他页面的跨站请求。
 
@@ -217,6 +223,8 @@ QWEN_MODEL=qwen-plus
 前缀决定档案归谁管，代码里没有写死是哪几家——想加第四家（比如 Kimi），
 在 `.env` 里照抄一段改个前缀就行，评测逻辑一行都不用动。
 跑 `cli.ts models` 可以看到 `.env` 里到底有哪些档案、各自接口上有哪些模型 id。
+服务商的 `/models` 有些免费模型不列（智谱就是），命令会把 `src/vendors.ts` 里
+已知的那些补上，所以免费型号不会凭空消失。
 
 任何 OpenAI 兼容接口都可以用：DeepSeek、阿里云百炼、智谱、Kimi、本地 vLLM。
 

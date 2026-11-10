@@ -22,9 +22,10 @@ import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateDataset } from "./dataset-validate.ts";
 import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION } from "./schema.ts";
-import { buildLlmConfig, listModels } from "./llm.ts";
+import { buildLlmConfig, listModels, probeChat, type LlmConfig } from "./llm.ts";
 import { discoverProfiles } from "./profiles.ts";
-import { lookupBuiltinPrice, VENDOR_FREE_MODELS } from "./pricing.ts";
+import { lookupBuiltinPrice } from "./pricing.ts";
+import { isKnownVendor, knownModelsFor } from "./vendors.ts";
 import type { EvalDataset } from "./schema.ts";
 
 const MIME: Record<string, string> = {
@@ -619,50 +620,154 @@ function describeSecretModel(
 }
 
 /**
- * 用档案里的密钥问一次服务端的模型列表，验证这个 key 通不通。
+ * 拼出这次测试用的配置。
  *
- * testKey 可以带一个还没保存的 key 进来试：只用这一次，不写盘、不回显。
- * override 里的接口地址和模型同样只用于这一次测试——
- * 第一次配一家新服务商时，.env 里还没有它的接口地址，
+ * .env 里的值打底，testKey 和表单里的接口地址、模型只是这一次测试的覆盖值，
+ * 不写盘。第一次配一家新服务商时 .env 里还没有它的接口地址，
  * 光看 .env 就会一直报「还没填接口地址」。
  */
-async function testSecret(
+async function configForTest(
+  prefix: string,
+  testKey?: string,
+  override?: { baseUrl?: string; model?: string },
+): Promise<{
+  config: LlmConfig;
+  values: Record<string, string>;
+  /** .env 里这个档案原本配的模型，不含本次测试的覆盖值 */
+  envModel: string;
+}> {
+  const values = envRecord(parseEnvFile(await readEnvText()));
+  const envModel = values[`${prefix}_MODEL`]?.trim() ?? "";
+  if (testKey) values[`${prefix}_API_KEY`] = testKey;
+  if (override?.baseUrl) values[`${prefix}_BASE_URL`] = override.baseUrl;
+  if (override?.model) values[`${prefix}_MODEL`] = override.model;
+  return { config: buildLlmConfig(values, prefix), values, envModel };
+}
+
+/**
+ * .env 里给这个档案写死的单价。
+ *
+ * 只在档案自己那个模型上生效：.env 里的单价是给 `LLM_MODEL` 那个模型写的，
+ * 换成别的模型还沿用它，报出来的成本就是错的。
+ */
+function envPriceFor(
+  values: Record<string, string>,
+  prefix: string,
+  model: string,
+): { prompt: number; completion: number; currency: string } | undefined {
+  const prompt = Number(values[`${prefix}_PRICE_PROMPT`]);
+  const completion = Number(values[`${prefix}_PRICE_COMPLETION`]);
+  if (!Number.isFinite(prompt) || !model) return undefined;
+  return {
+    prompt,
+    completion: Number.isFinite(completion) ? completion : 0,
+    currency: values[`${prefix}_PRICE_CURRENCY`]?.trim() || "¥",
+  };
+}
+
+/**
+ * 测连通：用当前配置真的问一次模型。
+ *
+ * 这不是「这家厂商有哪些模型」，而是「你现在这套配置能不能用」——
+ * 接口地址、密钥、模型 id 三样都要对才算通过。
+ */
+async function probeConfig(
+  prefix: string,
+  testKey?: string,
+  override?: { baseUrl?: string; model?: string },
+): Promise<{
+  ok: boolean;
+  latencyMs?: number;
+  error?: string;
+  model?: string;
+  price?: { prompt: number; completion: number; currency: string };
+}> {
+  const { config, values, envModel } = await configForTest(prefix, testKey, override);
+  if (!config.baseUrl) {
+    return { ok: false, error: "还没填接口地址" };
+  }
+  if (!config.apiKey) {
+    return { ok: false, error: "还没填密钥" };
+  }
+  if (!config.model) {
+    return { ok: false, error: "还没选模型" };
+  }
+  const probe = await probeChat(config);
+  if (!probe.ok) {
+    return {
+      ok: false,
+      latencyMs: probe.latencyMs,
+      error: explainProbeError(probe.detail),
+    };
+  }
+  return {
+    ok: true,
+    latencyMs: probe.latencyMs,
+    model: config.model,
+    // .env 里的单价只属于它自己配的那个模型，换了模型就查内置价目表。
+    price: describeSecretModel(
+      config.model,
+      config.model === envModel
+        ? envPriceFor(values, prefix, config.model)
+        : undefined,
+    ).price,
+  };
+}
+
+/**
+ * 把探测的失败翻译成人能看懂的话。
+ *
+ * 401 是密钥不对，404 多半是接口地址填错或者少了 /v1 这类后缀，
+ * 400 常常是模型 id 服务商不认——这三样要分清楚，不能一句「连不上」了事。
+ */
+function explainProbeError(detail?: string): string {
+  const message = detail ?? "连不上";
+  const status = /\((\d{3})\)/.exec(message)?.[1];
+  if (status === "401" || status === "403") {
+    return "密钥没通过鉴权，检查一下是不是复制漏了字符";
+  }
+  if (status === "404") {
+    return "接口地址不对：404。检查一下是不是少了 /v1 这样的后缀";
+  }
+  if (status === "400" && /model/i.test(message)) {
+    return "这个模型 id 服务商不认，换一个模型试试";
+  }
+  return message;
+}
+
+/**
+ * 问服务商要一份最新的模型列表。
+ *
+ * 这一步要密钥（服务商的 /models 都得鉴权），
+ * 和「测连通」是两件事：这里只负责列模型，通不通由测连通说了算。
+ */
+async function listSecretModels(
   prefix: string,
   testKey?: string,
   override?: { baseUrl?: string; model?: string },
 ): Promise<{ ok: boolean; models: SecretModel[]; error?: string }> {
-  const values = envRecord(parseEnvFile(await readEnvText()));
-  if (testKey) values[`${prefix}_API_KEY`] = testKey;
-  if (override?.baseUrl) values[`${prefix}_BASE_URL`] = override.baseUrl;
-  if (override?.model) values[`${prefix}_MODEL`] = override.model;
-  const config = buildLlmConfig(values, prefix);
+  const { config, values, envModel } = await configForTest(prefix, testKey, override);
   if (!config.baseUrl) {
     return { ok: false, models: [], error: "还没填接口地址" };
   }
   if (!config.apiKey) {
     return { ok: false, models: [], error: "还没填密钥" };
   }
-  const prompt = Number(values[`${prefix}_PRICE_PROMPT`]);
-  const completion = Number(values[`${prefix}_PRICE_COMPLETION`]);
-  const ownModel = values[`${prefix}_MODEL`]?.trim();
-  const envPrice =
-    Number.isFinite(prompt) && ownModel
-      ? {
-          prompt,
-          completion: Number.isFinite(completion) ? completion : 0,
-          currency: values[`${prefix}_PRICE_CURRENCY`]?.trim() || "¥",
-        }
-      : undefined;
   try {
     const listed = await listModels(config);
+    // 服务商自己列的 + 我们已知但它没列的（智谱的免费模型就是这种）。
     const models = [
       ...listed,
-      ...vendorFreeModels(config.baseUrl).filter((id) => !listed.includes(id)),
+      ...knownModelsFor(config.baseUrl).filter((id) => !listed.includes(id)),
     ];
     return {
       ok: true,
       models: models.map((id) =>
-        describeSecretModel(id, id === ownModel ? envPrice : undefined),
+        describeSecretModel(
+          id,
+          // .env 里的单价只属于它自己配的那个模型。
+          id === envModel ? envPriceFor(values, prefix, envModel) : undefined,
+        ),
       ),
     };
   } catch (error) {
@@ -672,17 +777,6 @@ async function testSecret(
       error: explainModelListError(error),
     };
   }
-}
-
-/** 这家厂商已知的免费模型，用来补齐没被列出来的那些。 */
-function vendorFreeModels(baseUrl: string): string[] {
-  let host = "";
-  try {
-    host = new URL(baseUrl).host.toLowerCase();
-  } catch {
-    return [];
-  }
-  return VENDOR_FREE_MODELS[host] ?? [];
 }
 
 /**
@@ -784,7 +878,31 @@ export async function serve(options: ServeOptions): Promise<void> {
           baseUrl: updates.find((item) => item.field === "BASE_URL")?.value,
           model: updates.find((item) => item.field === "MODEL")?.value,
         };
-        sendJson(res, 200, await testSecret(prefix, testKey, override));
+        sendJson(res, 200, await probeConfig(prefix, testKey, override));
+        return;
+      }
+
+      if (path === "/api/secrets/models" && req.method === "GET") {
+        // 这家厂商已知的模型，不需要密钥。
+        const baseUrl = url.searchParams.get("baseUrl") ?? "";
+        const ids = knownModelsFor(baseUrl);
+        sendJson(res, 200, {
+          ok: ids.length > 0,
+          known: isKnownVendor(baseUrl),
+          models: ids.map((id) => describeSecretModel(id, undefined)),
+        });
+        return;
+      }
+
+      if (path === "/api/secrets/models" && req.method === "POST") {
+        // 向服务商要一份最新的模型列表，这一步要密钥。
+        const body = await readBody(req);
+        const { prefix, updates, testKey } = parseSecretPayload(body);
+        const override = {
+          baseUrl: updates.find((item) => item.field === "BASE_URL")?.value,
+          model: updates.find((item) => item.field === "MODEL")?.value,
+        };
+        sendJson(res, 200, await listSecretModels(prefix, testKey, override));
         return;
       }
 

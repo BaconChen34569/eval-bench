@@ -108,25 +108,6 @@ export const BUILTIN_PRICES: Record<string, UnitPrice> = {
 };
 
 /**
- * 每家厂商域名对应的免费模型。
- *
- * 有些厂商的模型列表接口不把免费模型列出来（智谱就是：
- * /models 只给 12 个付费模型，免费那几个要手动填 id 才用得上）。
- * 不补上的话，下拉框里永远看不到「免费」的那几个。
- */
-export const VENDOR_FREE_MODELS: Record<string, string[]> = {
-  "open.bigmodel.cn": [
-    "glm-4.7-flash",
-    "glm-4.5-flash",
-    "glm-4-flash",
-    "glm-4-flash-250414",
-    "glm-4.6v-flash",
-    "glm-4.1v-thinking-flash",
-    "glm-4v-flash",
-  ],
-};
-
-/**
  * 查内置价目表。
  *
  * 先精确匹配，再按前缀匹配：deepseek-chat-0324 这种带日期后缀的算同一个模型。

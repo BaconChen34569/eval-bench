@@ -16,6 +16,7 @@ import { readBaseline } from "./baseline.ts";
 import { buildMultiProjectComparison, type ProjectManifest } from "./projects.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
 import { describePrice } from "./pricing.ts";
+import { knownModelsFor } from "./vendors.ts";
 import { DEFAULT_RETRIEVAL, STRATEGIES } from "./strategies.ts";
 import { serve, HARNESS_ROOT } from "./serve.ts";
 import type {
@@ -756,7 +757,12 @@ async function main(): Promise<void> {
           : `  还没选模型，填 ${profile.prefix}_MODEL=`,
       );
       try {
-        const models = await listModels(profile.config);
+        const listed = await listModels(profile.config);
+        // 服务商的 /models 有些免费模型不列（智谱就是），把已知的补上。
+        const models = [
+          ...listed,
+          ...knownModelsFor(profile.baseUrl).filter((id) => !listed.includes(id)),
+        ];
         for (const id of models) console.log(`    ${id}`);
       } catch (error) {
         console.log(

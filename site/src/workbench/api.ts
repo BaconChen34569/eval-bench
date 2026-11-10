@@ -108,6 +108,19 @@ export interface SecretModel {
 
 export interface SecretTestResult {
   ok: boolean;
+  /** 这套配置应答花了多久 */
+  latencyMs?: number;
+  error?: string;
+  /** 测的时候用的是哪个模型 */
+  model?: string;
+  price?: { prompt: number; completion: number; currency: string };
+}
+
+/** 一份模型列表：已知的，或者从服务商拉回来的。 */
+export interface SecretModelsResult {
+  ok: boolean;
+  /** 这家接口地址在已知厂商名单里吗 */
+  known?: boolean;
   models: SecretModel[];
   error?: string;
 }
@@ -238,11 +251,10 @@ export const api = {
     ),
 
   /**
-   * 拿档案（或者还没保存的 key）问一次服务端的模型列表。
+   * 测连通：用当前这套配置真的问一次模型。
    *
-   * 密钥只在服务端用一次，浏览器拿到的只有模型 id。
-   * baseUrl 和 model 也一起送过去：第一次配一家新服务商时，
-   * .env 里还没有它的接口地址，光看 .env 会一直报「还没填接口地址」。
+   * 接口地址、密钥、模型 id 三样都要对才算通过。
+   * 密钥只在服务端用一次，浏览器拿到的只有状态和耗时。
    */
   testSecret: (payload: {
     prefix: string;
@@ -251,6 +263,28 @@ export const api = {
     model?: string;
   }) =>
     request<SecretTestResult>("/api/secrets/test", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * 这家厂商已知的模型，不需要密钥。
+   *
+   * 问服务商要模型列表是要密钥的，但「这家大概有哪些模型」是公开信息，
+   * 所以下拉框不用等测连通就能填。
+   */
+  secretModels: (baseUrl: string) =>
+    request<SecretModelsResult>(
+      `/api/secrets/models?baseUrl=${encodeURIComponent(baseUrl)}`,
+    ),
+
+  /** 用密钥向服务商要一份最新的模型列表。 */
+  refreshSecretModels: (payload: {
+    prefix: string;
+    testKey?: string;
+    baseUrl?: string;
+  }) =>
+    request<SecretModelsResult>("/api/secrets/models", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

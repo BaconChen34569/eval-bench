@@ -9,7 +9,7 @@
  * 不用再手改文件，也不用把密钥打到命令行上。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Eye,
   EyeOff,
@@ -161,7 +161,8 @@ const PRESETS: Preset[] = [
 /** 一个档案的连通测试结果，就地显示在它自己那一行。 */
 interface ProfileResult {
   ok: boolean;
-  models: SecretModel[];
+  latencyMs?: number;
+  model?: string;
   error?: string;
 }
 
@@ -205,10 +206,12 @@ export function SecretsPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
-  /** 表单这一份档案的可用模型，测出来之后填进模型下拉框。 */
+  /** 表单这一份档案的可用模型，换服务商时按已知名单填好，不用等测连通。 */
   const [models, setModels] = useState<SecretModel[]>([]);
   /** 当前选中的模型值多少钱：手填的模型 id 也能查到价。 */
   const [modelPrice, setModelPrice] = useState<SecretModel | null>(null);
+  /** 换服务商时用来挡掉过期的模型列表请求。 */
+  const loadSeq = useRef(0);
   /** 每个档案各自的测试结果，按前缀存，互不干扰。 */
   const [profileResults, setProfileResults] = useState<
     Record<string, ProfileResult>
@@ -224,6 +227,8 @@ export function SecretsPanel() {
 
   useEffect(() => {
     void refresh();
+    // 一进页面就把默认那家的已知名单拉出来：选模型不用等密钥。
+    void loadKnownModels(PRESETS[0].baseUrl);
   }, []);
 
   // 模型 id 一变就查一次价：手填的模型（比如厂商没列出来的免费 flash）
@@ -251,6 +256,25 @@ export function SecretsPanel() {
     };
   }, [model]);
 
+  /**
+   * 下拉框里的候选模型。
+   *
+   * 已知名单里没有当前填的模型时，把它自己补进去——
+   * 厂商新出的型号本地还没收录，表单里也得能选。
+   */
+  const modelOptions = useMemo(() => {
+    const list = [...models];
+    const current = model.trim();
+    if (current && !list.some((item) => item.id === current)) {
+      list.push({
+        id: current,
+        paid: modelPrice?.paid ?? null,
+        price: modelPrice?.price,
+      });
+    }
+    return list;
+  }, [models, model, modelPrice]);
+
   const choosePreset = (id: string) => {
     setPresetId(id);
     setModels([]);
@@ -266,6 +290,53 @@ export function SecretsPanel() {
     // 换一家就把手里这把 key 清掉，免得存到别的档案里去。
     setApiKey("");
     setRevealed(false);
+    void loadKnownModels(preset.baseUrl);
+  };
+
+  /**
+   * 这家厂商已知的模型：不用密钥就能列出来。
+   *
+   * 问服务商要模型列表是要密钥的，但「这家大概有哪些模型」是公开信息，
+   * 所以下拉框在填密钥之前就该能用。
+   */
+  const loadKnownModels = async (url: string) => {
+    const seq = ++loadSeq.current;
+    if (!url.trim()) {
+      setModels([]);
+      return;
+    }
+    try {
+      const result = await api.secretModels(url.trim());
+      if (seq !== loadSeq.current) return;
+      setModels(result.models);
+    } catch {
+      if (seq === loadSeq.current) setModels([]);
+    }
+  };
+
+  /** 用密钥向服务商要一份最新的模型列表。 */
+  const refreshModels = async () => {
+    setBusy("models");
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await api.refreshSecretModels({
+        prefix,
+        testKey: apiKey.trim() || undefined,
+        baseUrl: baseUrl.trim() || undefined,
+      });
+      if (!result.ok) {
+        setError(result.error ?? "拉不到模型列表");
+        return;
+      }
+      setModels(result.models);
+      setManualModel(false);
+      setMessage(`从服务商拉到了 ${result.models.length} 个可用模型。`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy("");
+    }
   };
 
   const prefixError =
@@ -312,17 +383,18 @@ export function SecretsPanel() {
         baseUrl: baseUrl.trim() || undefined,
         model: model.trim() || undefined,
       });
-      if (result.ok) {
-        setModels(result.models);
-        setManualModel(false);
-        // 手上填的模型要是在列表里就留着，不在就挑列表里的第一个。
-        if (!result.models.some((item) => item.id === model)) {
-          setModel(result.models[0]?.id ?? model);
-        }
-        setMessage(`密钥可用，接口上有 ${result.models.length} 个可用模型。`);
-      } else {
+      if (!result.ok) {
         setError(result.error ?? "连不上");
+        return;
       }
+      const cost = result.price
+        ? result.price.prompt > 0 || result.price.completion > 0
+          ? `，单价 ¥ ${result.price.prompt} / ${result.price.completion}（每百万 token）`
+          : "，免费"
+        : "";
+      setMessage(
+        `配置可用：${result.model} 应答 ${result.latencyMs ?? 0} ms${cost}。`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -341,7 +413,6 @@ export function SecretsPanel() {
         ...prev,
         [profile.prefix]: {
           ok: false,
-          models: [],
           error: cause instanceof Error ? cause.message : String(cause),
         },
       }));
@@ -378,6 +449,7 @@ export function SecretsPanel() {
           <CardDescription>
             填一次，密钥写进本机的 harness/.env，之后命令行跑评测直接读它。
             这一步是选填的：不填也能跑，只是只能跑检索层（不花钱、不调模型）。
+            选模型不用密钥，测试连通才需要——它确认的是你现在这套配置能不能用。
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -470,6 +542,7 @@ export function SecretsPanel() {
               <Input
                 value={baseUrl}
                 onChange={(event) => setBaseUrl(event.target.value)}
+                onBlur={() => void loadKnownModels(baseUrl.trim())}
                 placeholder="https://api.deepseek.com/v1"
                 className="font-mono text-xs"
               />
@@ -479,12 +552,12 @@ export function SecretsPanel() {
               <span className="text-xs font-medium text-muted-foreground">
                 模型
               </span>
-              {models.length > 0 && !manualModel ? (
+              {modelOptions.length > 0 && !manualModel ? (
                 <NativeSelect
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
                 >
-                  {models.map((item) => (
+                  {modelOptions.map((item) => (
                     <NativeSelectOption key={item.id} value={item.id}>
                       {modelOptionLabel(item)}
                     </NativeSelectOption>
@@ -499,17 +572,25 @@ export function SecretsPanel() {
                 />
               )}
               <span className="text-xs text-muted-foreground">
-                {models.length > 0 ? (
-                  <button
-                    type="button"
-                    className="underline underline-offset-2"
-                    onClick={() => setManualModel((value) => !value)}
-                  >
-                    {manualModel ? "改回下拉框挑" : "下拉框里没有？手填模型 id"}
-                  </button>
-                ) : (
-                  "先点「测试连通」，就能从这家厂商的可用模型里挑；带 ¥ 的是要花钱的，只有明确标「免费」的才不花钱"
-                )}
+                {modelOptions.length > 0
+                  ? "带 ¥ 的是要花钱的，只有明确标「免费」的才不花钱"
+                  : "这家厂商不在已知名单里，下面的模型 id 可以手填"}
+                {" · "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={() => void refreshModels()}
+                >
+                  拉取最新列表
+                </button>{" "}
+                ·{" "}
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={() => setManualModel((value) => !value)}
+                >
+                  {manualModel ? "改回下拉框挑" : "手填模型 id"}
+                </button>
               </span>
               {priceHint(modelPrice) && (
                 <span
@@ -561,7 +642,7 @@ export function SecretsPanel() {
             <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-5 text-xs text-muted-foreground">
               <li>只写进本机 harness/.env，这个文件在 .gitignore 里，不进版本库</li>
               <li>页面不保存也不回显：存完输入框就清空，刷新页面也没有</li>
-              <li>只有点「测试连通」时，密钥才会被发给你填的那家服务商</li>
+              <li>只有点「测试连通」或「拉取最新列表」时，密钥才会被发给你填的那家服务商</li>
               <li>服务端不打印请求内容，日志里也不会出现密钥</li>
             </ul>
           </div>
@@ -643,7 +724,7 @@ export function SecretsPanel() {
                 {result && (
                   <span className="w-full text-xs text-muted-foreground">
                     {result.ok
-                      ? `密钥可用，接口上有 ${result.models.length} 个可用模型。`
+                      ? `配置可用：${result.model ?? "默认模型"} 应答 ${result.latencyMs ?? 0} ms`
                       : `连不通：${result.error ?? "未知原因"}`}
                   </span>
                 )}

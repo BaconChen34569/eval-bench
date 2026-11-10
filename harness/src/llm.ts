@@ -265,3 +265,73 @@ export async function listModels(config: LlmConfig): Promise<string[]> {
     .map((item) => item.id)
     .filter((id): id is string => typeof id === "string");
 }
+
+/** 探一次连通的结果。 */
+export interface LlmProbe {
+  ok: boolean;
+  /** 这次请求花了多久 */
+  latencyMs: number;
+  /** 成功时模型回的几个字，失败时是错误原因 */
+  detail?: string;
+}
+
+/**
+ * 用当前配置真的问一次模型。
+ *
+ * 测连通不是问「这家厂商有哪些模型」，而是问「你现在这套配置能不能用」：
+ * 接口地址、密钥、模型 id 三样都要对，才算通过。
+ * 消息只有两个字，输出上限 4 个 token，花的钱可以忽略。
+ */
+export async function probeChat(config: LlmConfig): Promise<LlmProbe> {
+  const started = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch(
+      `${config.baseUrl.replace(/\/$/, "")}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 4,
+        }),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new LlmError(
+        `LLM 请求失败 (${response.status}): ${body.slice(0, 200)}`,
+        response.status,
+      );
+    }
+    const payload = (await response.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const reply = payload.choices?.[0]?.message?.content?.trim();
+    return {
+      ok: true,
+      latencyMs: Date.now() - started,
+      detail: reply ? reply.slice(0, 40) : "模型没有回话",
+    };
+  } catch (error) {
+    if (error instanceof LlmError) {
+      return { ok: false, latencyMs: Date.now() - started, detail: error.message };
+    }
+    if (error instanceof Error && error.name === "AbortError") {
+      return { ok: false, latencyMs: Date.now() - started, detail: "请求超时" };
+    }
+    return {
+      ok: false,
+      latencyMs: Date.now() - started,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
