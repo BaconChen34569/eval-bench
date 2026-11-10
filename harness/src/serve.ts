@@ -563,6 +563,8 @@ function parseSecretPayload(body: unknown): {
   prefix: string;
   updates: { prefix: string; field: WritableField; value: string }[];
   testKey?: string;
+  /** true = 测 .env 里已经存好的那个档案，允许用存着的密钥 */
+  useStoredKey?: boolean;
 } {
   const input = (body ?? {}) as Record<string, unknown>;
   const prefix = String(input.prefix ?? "").trim().toUpperCase();
@@ -584,7 +586,8 @@ function parseSecretPayload(body: unknown): {
   }
 
   const testKey = typeof input.testKey === "string" ? input.testKey.trim() : "";
-  return { prefix, updates, testKey: testKey || undefined };
+  const useStoredKey = input.useStoredKey === true;
+  return { prefix, updates, testKey: testKey || undefined, useStoredKey };
 }
 
 /** 接口上的一个模型，带上价格信息，页面据此标出哪些要花钱。 */
@@ -625,11 +628,16 @@ function describeSecretModel(
  * .env 里的值打底，testKey 和表单里的接口地址、模型只是这一次测试的覆盖值，
  * 不写盘。第一次配一家新服务商时 .env 里还没有它的接口地址，
  * 光看 .env 就会一直报「还没填接口地址」。
+ *
+ * 密钥是例外：表单里的「测试连通」只认这次填的那把密钥（useStoredKey 为假），
+ * 不会拿 .env 里存着的旧密钥去问——不然用户明明没填密钥，
+ * 也会看到一句「配置可用」，以为自己配的是新密钥。
  */
 async function configForTest(
   prefix: string,
   testKey?: string,
   override?: { baseUrl?: string; model?: string },
+  options?: { useStoredKey?: boolean },
 ): Promise<{
   config: LlmConfig;
   values: Record<string, string>;
@@ -638,7 +646,11 @@ async function configForTest(
 }> {
   const values = envRecord(parseEnvFile(await readEnvText()));
   const envModel = values[`${prefix}_MODEL`]?.trim() ?? "";
-  if (testKey) values[`${prefix}_API_KEY`] = testKey;
+  if (options?.useStoredKey) {
+    if (testKey) values[`${prefix}_API_KEY`] = testKey;
+  } else {
+    values[`${prefix}_API_KEY`] = testKey ?? "";
+  }
   if (override?.baseUrl) values[`${prefix}_BASE_URL`] = override.baseUrl;
   if (override?.model) values[`${prefix}_MODEL`] = override.model;
   return { config: buildLlmConfig(values, prefix), values, envModel };
@@ -675,6 +687,7 @@ async function probeConfig(
   prefix: string,
   testKey?: string,
   override?: { baseUrl?: string; model?: string },
+  options?: { useStoredKey?: boolean },
 ): Promise<{
   ok: boolean;
   latencyMs?: number;
@@ -682,7 +695,12 @@ async function probeConfig(
   model?: string;
   price?: { prompt: number; completion: number; currency: string };
 }> {
-  const { config, values, envModel } = await configForTest(prefix, testKey, override);
+  const { config, values, envModel } = await configForTest(
+    prefix,
+    testKey,
+    override,
+    options,
+  );
   if (!config.baseUrl) {
     return { ok: false, error: "还没填接口地址" };
   }
@@ -740,13 +758,21 @@ function explainProbeError(detail?: string): string {
  *
  * 这一步要密钥（服务商的 /models 都得鉴权），
  * 和「测连通」是两件事：这里只负责列模型，通不通由测连通说了算。
+ *
+ * 拉列表不花钱，所以允许用 .env 里存着的密钥：
+ * 已经配好的档案不用每次都把密钥再敲一遍。
  */
 async function listSecretModels(
   prefix: string,
   testKey?: string,
   override?: { baseUrl?: string; model?: string },
 ): Promise<{ ok: boolean; models: SecretModel[]; error?: string }> {
-  const { config, values, envModel } = await configForTest(prefix, testKey, override);
+  const { config, values, envModel } = await configForTest(
+    prefix,
+    testKey,
+    override,
+    { useStoredKey: true },
+  );
   if (!config.baseUrl) {
     return { ok: false, models: [], error: "还没填接口地址" };
   }
@@ -871,14 +897,19 @@ export async function serve(options: ServeOptions): Promise<void> {
 
       if (path === "/api/secrets/test" && req.method === "POST") {
         const body = await readBody(req);
-        const { prefix, updates, testKey } = parseSecretPayload(body);
+        const { prefix, updates, testKey, useStoredKey } =
+          parseSecretPayload(body);
         // 表单里填的接口地址和模型一起带过来，
         // 第一次配一家新服务商时 .env 里还没有它们。
         const override = {
           baseUrl: updates.find((item) => item.field === "BASE_URL")?.value,
           model: updates.find((item) => item.field === "MODEL")?.value,
         };
-        sendJson(res, 200, await probeConfig(prefix, testKey, override));
+        sendJson(
+          res,
+          200,
+          await probeConfig(prefix, testKey, override, { useStoredKey }),
+        );
         return;
       }
 

@@ -169,7 +169,7 @@ cd site && npm ci && npm run build:local
 | `GET /api/secrets` | 看 `.env` 里有哪些模型档案、哪些字段缺了 |
 | `POST /api/secrets` | 写入密钥/接口地址/模型名到 `.env` |
 | `DELETE /api/secrets` | 清掉某个档案的密钥 |
-| `POST /api/secrets/test` | 用当前配置（档案 + 临时密钥/接口地址/模型）真的问一次模型，看这套配置能不能用 |
+| `POST /api/secrets/test` | 用当前配置（档案 + 临时密钥/接口地址/模型）真的问一次模型，看这套配置能不能用；`useStoredKey: true` 时改用 `.env` 里存着的密钥 |
 | `GET /api/secrets/models?baseUrl=...` | 这家厂商已知的模型列表，不需要密钥 |
 | `POST /api/secrets/models` | 用密钥向服务商要一份最新的模型列表 |
 | `GET /api/secrets/price?model=...` | 查一个模型 id 的单价，用来看手填的模型要不要花钱 |
@@ -182,6 +182,11 @@ cd site && npm ci && npm run build:local
 模型列表和测连通是两件事：选模型用的是内置的厂商型号表（`src/vendors.ts`），
 不用密钥也能列；「测试连通」才是拿当前配置真去问一次模型，
 接口地址、密钥、模型 id 三样都要对才算通过。
+
+表单里的「测试连通」只认这一次填的密钥，不会拿 `.env` 里存着的旧密钥去问：
+前缀撞上已存在的档案时，没填密钥就是「还没填密钥」，不会替用户借一把旧的来答。
+要测 `.env` 里存好的那个档案，用档案列表那一行的「测试」
+（接口上传 `useStoredKey: true`）。「拉取最新列表」不花钱，所以它允许借用存着的密钥。
 
 密钥相关的接口不回显密钥内容：状态接口只给「配没配 / 缺哪个字段」，
 写完之后密钥只留在 `.env` 里（文件权限 600，已被 `.gitignore` 忽略）。

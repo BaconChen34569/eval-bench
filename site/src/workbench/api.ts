@@ -255,12 +255,16 @@ export const api = {
    *
    * 接口地址、密钥、模型 id 三样都要对才算通过。
    * 密钥只在服务端用一次，浏览器拿到的只有状态和耗时。
+   *
+   * 表单里的「测试连通」不传 useStoredKey：它只认这次填的密钥，
+   * 不会拿 .env 里存着的旧密钥去问。
    */
   testSecret: (payload: {
     prefix: string;
     testKey?: string;
     baseUrl?: string;
     model?: string;
+    useStoredKey?: boolean;
   }) =>
     request<SecretTestResult>("/api/secrets/test", {
       method: "POST",

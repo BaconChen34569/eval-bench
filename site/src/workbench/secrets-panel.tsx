@@ -403,10 +403,14 @@ export function SecretsPanel() {
   };
 
   // 列表里的档案各自测，结果只落在它自己那一行，别串到上面的表单里。
+  // 这里测的就是 .env 里存好的那个档案，所以允许用存着的密钥。
   const testProfile = async (profile: SecretProfile) => {
     setBusy(`test-${profile.prefix}`);
     try {
-      const result = await api.testSecret({ prefix: profile.prefix });
+      const result = await api.testSecret({
+        prefix: profile.prefix,
+        useStoredKey: true,
+      });
       setProfileResults((prev) => ({ ...prev, [profile.prefix]: result }));
     } catch (cause) {
       setProfileResults((prev) => ({
