@@ -87,6 +87,10 @@ const LOCAL_WORKBENCH_STEPS: CommandStep[] = [
       <>
         服务只监听 127.0.0.1，不对外暴露。想换端口加{" "}
         <code className="font-mono">--port 8899</code>。
+        命令写成一行，复制哪一条都不会跑错目录；
+        老版本 PowerShell（5.1）不认 <code className="font-mono">&&</code>，
+        把 <code className="font-mono">&&</code> 换成{" "}
+        <code className="font-mono">;</code> 即可。
       </>
     ),
   },
