@@ -80,7 +80,9 @@ const LOCAL_WORKBENCH_STEPS: CommandStep[] = [
     id: "lb-serve",
     title: "2. 起本地工作台",
     cwd: "eval-bench\\site",
-    lines: ["cd ..\\harness", "node --experimental-strip-types src/cli.ts serve"],
+    lines: [
+      "cd ../harness && node --experimental-strip-types src/cli.ts serve",
+    ],
     note: (
       <>
         服务只监听 127.0.0.1，不对外暴露。想换端口加{" "}

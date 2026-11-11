@@ -119,8 +119,7 @@ export function Workbench() {
               先在仓库的 harness 目录里起服务，然后刷新本页：
             </p>
             <pre className="mt-2 overflow-x-auto rounded-md bg-secondary px-3 py-2 font-mono text-xs">
-              {`cd harness
-node --experimental-strip-types src/cli.ts serve`}
+              {`cd harness && node --experimental-strip-types src/cli.ts serve`}
             </pre>
             <p className="mt-2 text-xs text-muted-foreground">
               {healthError}
