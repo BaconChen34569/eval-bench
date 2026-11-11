@@ -26,9 +26,24 @@ export interface JudgeValidationResult {
 export async function validateJudge(
   dataset: EvalDataset,
   llm: LlmConfig,
-  options: { onProgress?: (done: number, total: number) => void } = {},
+  options: {
+    onProgress?: (done: number, total: number) => void;
+    /**
+     * 只自检前 N 道题。
+     *
+     * 命令行不传这个参数：尺子校准要看全量，
+     * 少抽几题算出来的「一致率」撑不起结论。
+     * 本地工作台的试跑会传——跑全量尺子校准等于白花几十次请求，
+     * 用户明确说「只跑前几题」时，自检也应该跟着缩到同一批题里。
+     */
+    limit?: number;
+  } = {},
 ): Promise<JudgeValidationResult> {
-  const questions = dataset.questions.filter(
+  const scope =
+    options.limit && options.limit > 0
+      ? dataset.questions.slice(0, options.limit)
+      : dataset.questions;
+  const questions = scope.filter(
     (question) => question.humanScore !== undefined,
   );
   const details: JudgeValidationDetail[] = [];
@@ -80,7 +95,11 @@ export async function validateJudge(
       scored.reduce((sum, item) => sum + item.humanScore, 0) / total,
     exactAgreement:
       scored.filter((item) => item.judgeScore === item.humanScore).length / total,
-    note: "judge 给人工参考答案打分，与人工评分相差不超过 1 分视为一致",
+    note: questions.length
+      ? scored.length
+        ? "judge 给人工参考答案打分，与人工评分相差不超过 1 分视为一致"
+        : "judge 一次也没打上分，自检没做成"
+      : "这次抽到的题里没有带人工评分的题，没法自检",
   };
 
   return { summary, details };

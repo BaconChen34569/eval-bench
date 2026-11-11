@@ -196,11 +196,18 @@ function questionCount(options: GenJobOptions): number {
   return Math.min(options.limit, all);
 }
 
-/** judge 自检会抽多少题：只有带人工评分的题才参与。 */
+/**
+ * judge 自检会抽多少题。
+ *
+ * 只有带人工评分的题才参与；「只跑前几题」时也只看这几题，
+ * 自检和评测考的是同一批题，花的钱才对得上用户填的数。
+ */
 function judgeCount(options: GenJobOptions): number {
-  return options.dataset.questions.filter(
-    (question) => question.humanScore !== undefined,
-  ).length;
+  const scope =
+    options.limit && options.limit > 0
+      ? options.dataset.questions.slice(0, options.limit)
+      : options.dataset.questions;
+  return scope.filter((question) => question.humanScore !== undefined).length;
 }
 
 /** 读产物目录里的 report.json，拿它已有的运行记录去复用。 */
@@ -299,8 +306,11 @@ async function runSingle(
   if (options.judgeCheck) {
     tracker.enter("judge");
     sync();
-    job.log.push("judge 自检：让 judge 给人工参考答案打分…");
+    job.log.push(
+      `judge 自检：让 judge 给人工参考答案打分（${judged} 道带人工评分的题）…`,
+    );
     const validation = await validateJudge(options.dataset, judge.config, {
+      limit: options.limit,
       onProgress: (done, total) => {
         tracker.advanceTo(done, 1);
         sync();
@@ -309,7 +319,9 @@ async function runSingle(
     });
     judgeValidation = validation.summary;
     job.log.push(
-      `  一致率 ${(judgeValidation.agreement * 100).toFixed(1)}%（${judgeValidation.sampled} 题）`,
+      judgeValidation.sampled > 0
+        ? `  一致率 ${(judgeValidation.agreement * 100).toFixed(1)}%（${judgeValidation.sampled} 题）`
+        : `  ${judgeValidation.note}`,
     );
   }
 
@@ -400,8 +412,11 @@ async function runLadderJob(
   if (options.judgeCheck) {
     tracker.enter("judge");
     sync();
-    job.log.push("judge 自检：让 judge 给人工参考答案打分…");
+    job.log.push(
+      `judge 自检：让 judge 给人工参考答案打分（${judged} 道带人工评分的题）…`,
+    );
     const validation = await validateJudge(options.dataset, judge.config, {
+      limit: options.limit,
       onProgress: (done, total) => {
         tracker.advanceTo(done, 1);
         sync();
@@ -409,6 +424,11 @@ async function runLadderJob(
       },
     });
     judgeValidation = validation.summary;
+    job.log.push(
+      judgeValidation.sampled > 0
+        ? `  一致率 ${(judgeValidation.agreement * 100).toFixed(1)}%（${judgeValidation.sampled} 题）`
+        : `  ${judgeValidation.note}`,
+    );
   }
 
   // 一上手就报出第一轮的名字，别让用户对着「准备中」干等。

@@ -500,6 +500,38 @@ async function readEnvText(): Promise<string> {
 }
 
 /**
+ * 启动时 .env 里的内容。
+ *
+ * 用来分清「这个变量是 .env 给的」还是「系统环境变量给的」：
+ * 前者页面上改完就该立刻生效，后者优先级更高，不能被文件覆盖。
+ */
+let startupEnvValues: Record<string, string> = {};
+
+/**
+ * 这一次要用哪些环境变量。
+ *
+ * 进程环境是启动时的快照，页面上把新档案存进 .env 之后它不会自己更新——
+ * 于是新档案在「模型密钥」那一页看得见，在「跑生成层」这一页却选不到。
+ * 所以每次都重新读一遍文件，把属于文件的那些变量换成文件里的新值。
+ */
+async function currentEnv(): Promise<Record<string, string | undefined>> {
+  const fileValues = envRecord(parseEnvFile(await readEnvText()));
+  const merged: Record<string, string | undefined> = { ...process.env };
+  const keys = new Set([
+    ...Object.keys(startupEnvValues),
+    ...Object.keys(fileValues),
+  ]);
+  for (const key of keys) {
+    // 启动时这个变量的值和文件里不一样，说明它来自系统环境变量，不动它
+    if (process.env[key] !== startupEnvValues[key]) continue;
+    const value = fileValues[key];
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  return merged;
+}
+
+/**
  * 读 .env 里的档案状态。
  *
  * 只回传「有没有配、缺哪几个字段、接口和模型是什么」，
@@ -846,6 +878,8 @@ function explainModelListError(error: unknown): string {
 
 export async function serve(options: ServeOptions): Promise<void> {
   const { workbenchRoot, storyRoot, datasetsRoot, defaultRepoRoot } = options;
+  // 记下启动时文件里的内容，用来判断哪些变量归 .env 管。
+  startupEnvValues = envRecord(parseEnvFile(await readEnvText()));
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -1018,7 +1052,7 @@ export async function serve(options: ServeOptions): Promise<void> {
       }
 
       if (path === "/api/gen/options" && req.method === "GET") {
-        sendJson(res, 200, genOptions(process.env));
+        sendJson(res, 200, genOptions(await currentEnv()));
         return;
       }
 
@@ -1066,7 +1100,7 @@ export async function serve(options: ServeOptions): Promise<void> {
             judgeCheck: body.judgeCheck !== false,
             stepId: body.stepId?.trim() || undefined,
           },
-          process.env,
+          await currentEnv(),
           OUT_DIR,
         );
         sendJson(res, 200, {

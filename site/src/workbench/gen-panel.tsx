@@ -26,6 +26,7 @@ import {
   type GenMode,
   type GenOptions,
   type Health,
+  type WorkDataset,
 } from "@/src/workbench/api";
 import { DirPicker } from "@/src/workbench/dir-picker";
 
@@ -88,6 +89,7 @@ export function GenPanel({
   onReport: (report: ExperimentReport) => void;
 }) {
   const [options, setOptions] = useState<GenOptions | null>(null);
+  const [datasetDetail, setDatasetDetail] = useState<WorkDataset | null>(null);
   const [mode, setMode] = useState<GenMode>("single");
   const [datasetId, setDatasetId] = useState("");
   const [repoRoot, setRepoRoot] = useState("");
@@ -132,6 +134,26 @@ export function GenPanel({
   useEffect(() => {
     if (health && !datasetId) setDatasetId(health.datasets[0]?.id ?? "");
   }, [health, datasetId]);
+
+  // 题集明细：算 judge 自检要抽几题，得知道哪几题带人工评分。
+  useEffect(() => {
+    if (!datasetId) {
+      setDatasetDetail(null);
+      return;
+    }
+    let alive = true;
+    void api
+      .dataset(datasetId)
+      .then((value) => {
+        if (alive) setDatasetDetail(value);
+      })
+      .catch(() => {
+        if (alive) setDatasetDetail(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [datasetId]);
 
   // 任务在服务端跑，这里轮询看进度。
   const poll = useCallback(async (id: string) => {
@@ -254,17 +276,28 @@ export function GenPanel({
 
   const dataset = health?.datasets.find((item) => item.id === datasetId);
   const questionCount = dataset?.questions ?? 0;
-  // judge 自检跑的是全部带人工评分的题，不受「只跑前几题」限制。
-  const judgeCount = dataset?.judgeQuestions ?? 0;
   const limitCount = Number(limit) > 0 ? Math.min(Number(limit), questionCount) : questionCount;
+  // judge 自检只在这次要跑的题里挑带人工评分的那些：自检和评测考的是同一批题，
+  // 「只跑前几题」时不该再偷偷跑一遍全量自检。
+  const judgeScope = datasetDetail
+    ? limitCount > 0
+      ? datasetDetail.questions.slice(0, limitCount)
+      : datasetDetail.questions
+    : [];
+  const judgeCount = datasetDetail
+    ? judgeScope.filter((question) => question.humanScore !== undefined).length
+    : limitCount > 0
+      ? 0
+      : (dataset?.judgeQuestions ?? 0);
   const current = MODES.find((item) => item.id === mode);
   // 粗略估算这次要发多少次模型请求，好让用户知道大概要花多少钱。
   // 一道题 = 被测模型答一次 + judge 打一次分。
+  const judgeCalls = judgeCheck && mode !== "compare" ? judgeCount : 0;
   const calls =
     mode === "single"
-      ? limitCount * 3 * 2 + (judgeCheck ? judgeCount : 0)
+      ? limitCount * 3 * 2 + judgeCalls
       : mode === "ladder"
-        ? limitCount * 7 * 2 + (judgeCheck ? judgeCount : 0)
+        ? limitCount * 7 * 2 + judgeCalls
         : limitCount * agentProfiles.length * 2 +
           limitCount * agentProfiles.length * Math.max(0, judgeProfiles.length - 1);
 
@@ -470,18 +503,29 @@ export function GenPanel({
             />
             <span className="text-[11px] text-muted-foreground">
               填 0 表示全部题目。第一次试跑建议填 3-5 题。
+              {judgeCheck && mode !== "compare"
+                ? `judge 自检也跟着缩到这 ${limitCount} 题里。`
+                : ""}
             </span>
           </label>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={judgeCheck}
-                disabled={running}
-                onCheckedChange={(value) => setJudgeCheck(value === true)}
-              />
-              <span>顺便做 judge 自检</span>
-            </label>
-          </div>
+          {mode === "compare" ? (
+            <div className="flex items-end">
+              <span className="text-[11px] text-muted-foreground">
+                多模型对比本身就用两把尺子，不用另外做 judge 自检。
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={judgeCheck}
+                  disabled={running}
+                  onCheckedChange={(value) => setJudgeCheck(value === true)}
+                />
+                <span>顺便做 judge 自检</span>
+              </label>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -500,6 +544,7 @@ export function GenPanel({
           {questionCount > 0 && (
             <span className="text-xs text-muted-foreground">
               {limitCount > 0 ? `${limitCount} 道题` : ""} · 大概 {calls} 次模型请求
+              {judgeCalls > 0 ? ` · 含 judge 自检 ${judgeCount} 题` : ""}
             </span>
           )}
         </div>
