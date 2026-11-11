@@ -178,6 +178,7 @@ export function ReportPanel({
             <CardTitle className="text-base">胜负矩阵</CardTitle>
             <CardDescription>
               每行一道题，每列一种切分策略，格子里是 judge 打分。
+              只列这次真跑过的题——没跑的题不会画成 0 分。
             </CardDescription>
           </CardHeader>
           <CardContent>
