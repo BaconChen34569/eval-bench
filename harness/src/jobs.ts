@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { runEvaluation } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
+import { judgeCheckKey, readJudgeCheck, writeJudgeCheck } from "./judge-cache.ts";
 import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
 import { readyProfiles, resolveProfile, type ReadyProfile } from "./profiles.ts";
@@ -36,6 +37,8 @@ export interface GenJobOptions {
   judgeProfiles?: string[];
   /** 只跑前 N 题 */
   limit?: number;
+  /** 同时发几次模型请求。1 = 一题一题来。 */
+  concurrency?: number;
   /** 顺便做 judge 自检 */
   judgeCheck?: boolean;
   /** 多模型对比用阶梯的哪一轮配置 */
@@ -158,6 +161,17 @@ class ProgressTracker {
     this.calls += delta * callsPerQuestion;
   }
 
+  /**
+   * 某一阶段每题实际要发几次请求。
+   *
+   * judge 自检被复用的时候一次请求都不发，
+   * 预估总量也得跟着降下来，不然进度条永远停在「没跑完」。
+   */
+  setCallsPerQuestion(key: string, callsPerQuestion: number): void {
+    const stage = this.plan.find((item) => item.key === key);
+    if (stage) stage.callsPerQuestion = callsPerQuestion;
+  }
+
   snapshot(): GenProgress {
     const stage = this.plan[this.index];
     const total = this.plan.reduce((sum, item) => sum + item.total, 0);
@@ -224,6 +238,71 @@ async function reusableRuns(outDir: string): Promise<EvalRun[]> {
 }
 
 /**
+ * 做 judge 自检。
+ *
+ * 同一把尺子、同一批题、同一版代码，自检的答案就那一个：
+ * 再跑一遍既花模型请求，又给同一个数字加一份噪声。
+ * 所以先看有没有存过，存过就直接用。
+ */
+async function runJudgeCheck(
+  job: GenJob,
+  options: GenJobOptions,
+  judge: ReadyProfile,
+  outDir: string,
+  tracker: ProgressTracker,
+  sync: () => void,
+): Promise<JudgeValidation> {
+  const scope =
+    options.limit && options.limit > 0
+      ? options.dataset.questions.slice(0, options.limit)
+      : options.dataset.questions;
+  const sampled = scope.filter(
+    (question) => question.humanScore !== undefined,
+  );
+
+  tracker.enter("judge");
+  sync();
+
+  const key = judgeCheckKey(options.dataset, options.limit, judge.config);
+  const cached = await readJudgeCheck(outDir, key);
+  if (cached) {
+    // 复用的自检没有真的发请求，这一阶段不计入模型请求数
+    tracker.setCallsPerQuestion("judge", 0);
+    tracker.advanceTo(sampled.length, 0);
+    sync();
+    job.log.push(
+      `judge 自检：复用 ${cached.createdAt} 的结果（${cached.result.summary.sampled} 题），这次没花模型请求`,
+    );
+    job.log.push(
+      `  一致率 ${(cached.result.summary.agreement * 100).toFixed(1)}%（${cached.result.summary.sampled} 题）`,
+    );
+    return cached.result.summary;
+  }
+
+  job.log.push(
+    `judge 自检：让 judge 给人工参考答案打分（${sampled.length} 道带人工评分的题）…`,
+  );
+  const validation = await validateJudge(options.dataset, judge.config, {
+    limit: options.limit,
+    concurrency: options.concurrency,
+    onProgress: (done, total) => {
+      tracker.advanceTo(done, 1);
+      sync();
+      job.log.push(`  judge 自检 (${done}/${total})`);
+    },
+  });
+  if (validation.summary.sampled > 0) {
+    await writeJudgeCheck(outDir, key, validation);
+  }
+  job.log.push(
+    validation.summary.sampled > 0
+      ? `  一致率 ${(validation.summary.agreement * 100).toFixed(1)}%（${validation.summary.sampled} 题）`
+      : `  ${validation.summary.note}`,
+  );
+  return validation.summary;
+}
+
+/**
  * 把生成层的数字回填到检索层指标里。
  *
  * 检索层只算召回，成功率得从生成层的运行记录里来；
@@ -250,6 +329,7 @@ async function runSingle(
   job: GenJob,
   options: GenJobOptions,
   env: Record<string, string | undefined>,
+  outDir: string,
 ): Promise<ExperimentReport> {
   const agent = resolveProfile(env, options.agentProfile);
   const judge = options.judgeProfile
@@ -304,24 +384,13 @@ async function runSingle(
 
   let judgeValidation = NO_JUDGE_CHECK;
   if (options.judgeCheck) {
-    tracker.enter("judge");
-    sync();
-    job.log.push(
-      `judge 自检：让 judge 给人工参考答案打分（${judged} 道带人工评分的题）…`,
-    );
-    const validation = await validateJudge(options.dataset, judge.config, {
-      limit: options.limit,
-      onProgress: (done, total) => {
-        tracker.advanceTo(done, 1);
-        sync();
-        job.log.push(`  judge 自检 (${done}/${total})`);
-      },
-    });
-    judgeValidation = validation.summary;
-    job.log.push(
-      judgeValidation.sampled > 0
-        ? `  一致率 ${(judgeValidation.agreement * 100).toFixed(1)}%（${judgeValidation.sampled} 题）`
-        : `  ${judgeValidation.note}`,
+    judgeValidation = await runJudgeCheck(
+      job,
+      options,
+      judge,
+      outDir,
+      tracker,
+      sync,
     );
   }
 
@@ -340,6 +409,7 @@ async function runSingle(
       successThreshold: 4,
       runId: `${strategy.id}-${Date.now()}`,
       limit: options.limit,
+      concurrency: options.concurrency,
       profile: agent.id,
       profileLabel: agent.label,
       onProgress: (done, total, message) => {
@@ -410,24 +480,13 @@ async function runLadderJob(
 
   let judgeValidation = NO_JUDGE_CHECK;
   if (options.judgeCheck) {
-    tracker.enter("judge");
-    sync();
-    job.log.push(
-      `judge 自检：让 judge 给人工参考答案打分（${judged} 道带人工评分的题）…`,
-    );
-    const validation = await validateJudge(options.dataset, judge.config, {
-      limit: options.limit,
-      onProgress: (done, total) => {
-        tracker.advanceTo(done, 1);
-        sync();
-        job.log.push(`  judge 自检 (${done}/${total})`);
-      },
-    });
-    judgeValidation = validation.summary;
-    job.log.push(
-      judgeValidation.sampled > 0
-        ? `  一致率 ${(judgeValidation.agreement * 100).toFixed(1)}%（${judgeValidation.sampled} 题）`
-        : `  ${judgeValidation.note}`,
+    judgeValidation = await runJudgeCheck(
+      job,
+      options,
+      judge,
+      outDir,
+      tracker,
+      sync,
     );
   }
 
@@ -449,6 +508,7 @@ async function runLadderJob(
     successThreshold: 4,
     reuseRuns: reuse,
     limit: options.limit,
+    concurrency: options.concurrency,
     onProgress: (step, done, total, message) =>
       job.log.push(`  ${step.id} (${done}/${total}) ${message}`),
     onQuestionProgress: (progress) => {
@@ -552,6 +612,7 @@ async function runCompareJob(
     successThreshold: 4,
     reuseRuns: reuse,
     limit: options.limit,
+    concurrency: options.concurrency,
     onProgress: (message) => job.log.push(`  ${message}`),
     onQuestionProgress: (info) => {
       tracker.enter(
@@ -629,7 +690,7 @@ export function startGenJob(
           ? await runLadderJob(job, options, env, outDir)
           : options.mode === "compare"
             ? await runCompareJob(job, options, env, outDir)
-            : await runSingle(job, options, env);
+            : await runSingle(job, options, env, outDir);
 
       job.report = report;
       job.status = "done";

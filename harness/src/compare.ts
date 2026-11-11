@@ -44,6 +44,8 @@ export interface CompareOptions {
   /** 可复用的运行记录，比如阶梯最后一轮 */
   reuseRuns?: EvalRun[];
   limit?: number;
+  /** 同时发几次模型请求。1 = 一题一题来。 */
+  concurrency?: number;
   onProgress?: (message: string) => void;
   /**
    * 每一题跑完时的细账。
@@ -251,6 +253,7 @@ export async function runComparison(
         limit: options.limit,
         profile: agent.id,
         profileLabel: agent.label,
+        concurrency: options.concurrency,
         onProgress: (done, total, message) => {
           options.onQuestionProgress?.({
             agent,
@@ -275,6 +278,7 @@ export async function runComparison(
         agentLlm: agent.config,
         judgeLlm: judge.config,
         successThreshold,
+        concurrency: options.concurrency,
         onProgress: (done, total, message) => {
           options.onQuestionProgress?.({
             agent,

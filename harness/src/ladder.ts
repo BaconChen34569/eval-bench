@@ -289,6 +289,13 @@ export interface LadderOptions {
   /** 已有的运行记录，配置一致的轮次直接复用，不再花钱重跑 */
   reuseRuns?: EvalRun[];
   limit?: number;
+  /**
+   * 同时发几次模型请求。1 = 一轮里的题一题一题来。
+   *
+   * 阶梯每一轮都跑同一批题，改的是配置不是协议，
+   * 所以并发只影响快慢，不影响这一轮的分数。
+   */
+  concurrency?: number;
   onProgress?: (step: LadderConfig, done: number, total: number, message: string) => void;
   /**
    * 每一题跑完时的细账。
@@ -358,6 +365,7 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
         runId: `ladder-${step.id}-${started}`,
         promptVersion: step.promptVersion,
         limit: options.limit,
+        concurrency: options.concurrency,
         onProgress: (done, total, message) => {
           options.onQuestionProgress?.({ step, done, total, reused: false });
           options.onProgress?.(

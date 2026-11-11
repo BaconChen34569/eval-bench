@@ -5,6 +5,7 @@ import { loadRepository } from "./repository.ts";
 import { buildIndex, search, toCitations, evidenceRecall } from "./retrieval.ts";
 import { answerQuestion, parseAnswerCitations } from "./agent.ts";
 import { classifyFailure, fileLineCounts } from "./failure.ts";
+import { mapWithConcurrency } from "./concurrency.ts";
 import { judgeAnswer } from "./judge.ts";
 import { estimateCost, type LlmConfig } from "./llm.ts";
 import {
@@ -12,6 +13,7 @@ import {
   type CaseResult,
   type ChunkingStrategy,
   type EvalDataset,
+  type EvalQuestion,
   type EvalRun,
   type ExperimentReport,
   type PromptVersion,
@@ -42,6 +44,14 @@ export interface RunOptions {
   profileLabel?: string;
   /** 只跑前 N 题，用于快速验证链路 */
   limit?: number;
+  /**
+   * 同时发几次模型请求。
+   *
+   * 1 是「一题一题来」：慢，但完全按题目顺序走。
+   * 调高之后总耗时接近「最慢的那道题」而不是「所有题加起来」，
+   * 代价是服务商可能限流。命令行默认 1，本地工作台默认更高。
+   */
+  concurrency?: number;
   onProgress?: (done: number, total: number, message: string) => void;
 }
 
@@ -80,7 +90,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
 
   const cases: CaseResult[] = [];
 
-  for (const [position, question] of questions.entries()) {
+  const runCase = async (question: EvalQuestion): Promise<CaseResult> => {
     const hits = search(index, question.question, retrieval.topK, {
       rerankMode: retrieval.rerankMode,
       queryExpansion: retrieval.queryExpansion,
@@ -88,7 +98,6 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
     const chunksForPrompt = hits.map((hit) => hit.chunk);
     const fallbackCitations = toCitations(hits);
 
-    let caseResult: CaseResult;
     try {
       const answer = await answerQuestion(
         llm,
@@ -109,17 +118,14 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
           .join("\n\n"),
       );
 
-      const recall = evidenceRecall(
-        answer.citations,
-        question.reference.evidence,
-      );
+      const recall = evidenceRecall(answer.citations, question.reference.evidence);
 
       // agent 和 judge 分别算钱：多模型对比里两家单价不一样，
       // 混在一起就看不出「贵在哪」。
       const agentCost = estimateCost(answer.tokens, llm.pricePerMillion);
       const judgeCost = estimateCost(judged.tokens, judgeLlm.pricePerMillion);
 
-      caseResult = {
+      return {
         questionId: question.id,
         category: question.category,
         answer: answer.answer,
@@ -149,7 +155,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
         ),
       };
     } catch (error) {
-      caseResult = {
+      return {
         questionId: question.id,
         category: question.category,
         answer: "",
@@ -171,14 +177,27 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
         failureKind: "timeout",
       };
     }
+  };
 
-    cases.push(caseResult);
-    options.onProgress?.(
-      position + 1,
-      questions.length,
-      `[${chunking.id}] ${question.id} → judge ${caseResult.judgeScore}/5`,
-    );
-  }
+  // 并发只影响「什么时候拿到结果」：done 是完成计数，
+  // 报告里的题目顺序仍然按题号排。
+  const concurrency = Math.max(1, Math.floor(options.concurrency ?? 1));
+  let completed = 0;
+  const results = await mapWithConcurrency(
+    questions,
+    concurrency,
+    async (question) => {
+      const caseResult = await runCase(question);
+      completed += 1;
+      options.onProgress?.(
+        completed,
+        questions.length,
+        `[${chunking.id}] ${question.id} → judge ${caseResult.judgeScore}/5`,
+      );
+      return caseResult;
+    },
+  );
+  cases.push(...results);
 
   const summary = summarize(cases, successThreshold);
   const run: EvalRun = {

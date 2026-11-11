@@ -252,6 +252,8 @@ async function listReports(): Promise<{ outDir: string; files: ReportFile[] }> {
       return;
     }
     for (const name of names) {
+      // 点开头的文件是工具自己留的中间状态，不进产物列表
+      if (name.startsWith(".")) continue;
       if (!name.endsWith(".json")) continue;
       const path = join(dir, name);
       try {
@@ -1067,6 +1069,7 @@ export async function serve(options: ServeOptions): Promise<void> {
           agentProfiles?: string[];
           judgeProfiles?: string[];
           limit?: number;
+          concurrency?: number;
           judgeCheck?: boolean;
           stepId?: string;
         };
@@ -1097,6 +1100,10 @@ export async function serve(options: ServeOptions): Promise<void> {
             agentProfiles: (body.agentProfiles ?? []).filter(Boolean),
             judgeProfiles: (body.judgeProfiles ?? []).filter(Boolean),
             limit: Number(body.limit) > 0 ? Number(body.limit) : undefined,
+            concurrency:
+              Number(body.concurrency) > 0
+                ? Math.floor(Number(body.concurrency))
+                : undefined,
             judgeCheck: body.judgeCheck !== false,
             stepId: body.stepId?.trim() || undefined,
           },

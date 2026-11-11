@@ -48,6 +48,9 @@ const MODES: { id: GenMode; label: string; hint: string }[] = [
   },
 ];
 
+/** 并发档位。再高容易被服务商限流，收益也不大。 */
+const CONCURRENCY_OPTIONS = [1, 2, 4, 8];
+
 /**
  * 等的时候该说的话。
  *
@@ -60,6 +63,7 @@ const WAIT_TIPS = [
   "预算按「模型请求次数」估：一道题 = 被测一次 + 打分一次。跑完这里会写明实际发了多少次。",
   "如果卡在第一题别急着停——第一次请求要等模型冷启动，通常比后面的慢得多。",
   "跑出来的数字会和命令行 experiment / ladder / compare 完全一致，可以直接对照着看。",
+  "开了并发之后几道题是一起问的，日志里的题号会跳着走——那是同时回来的，不是乱了。",
 ];
 
 /** 把毫秒写成「3 分 12 秒」这样的大白话。 */
@@ -99,6 +103,7 @@ export function GenPanel({
   const [judgeProfiles, setJudgeProfiles] = useState<string[]>([]);
   const [stepId, setStepId] = useState("");
   const [limit, setLimit] = useState("0");
+  const [concurrency, setConcurrency] = useState("4");
   const [judgeCheck, setJudgeCheck] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [job, setJob] = useState<GenJob | null>(null);
@@ -236,6 +241,7 @@ export function GenPanel({
         datasetId,
         repoRoot,
         limit: Number(limit) > 0 ? Number(limit) : undefined,
+        concurrency: Number(concurrency) > 0 ? Number(concurrency) : undefined,
         judgeCheck,
         ...(mode === "compare"
           ? {
@@ -290,6 +296,7 @@ export function GenPanel({
       ? 0
       : (dataset?.judgeQuestions ?? 0);
   const current = MODES.find((item) => item.id === mode);
+  const concurrencyCount = Number(concurrency) > 0 ? Number(concurrency) : 1;
   // 粗略估算这次要发多少次模型请求，好让用户知道大概要花多少钱。
   // 一道题 = 被测模型答一次 + judge 打一次分。
   const judgeCalls = judgeCheck && mode !== "compare" ? judgeCount : 0;
@@ -489,7 +496,7 @@ export function GenPanel({
           </Alert>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-muted-foreground">
               只跑前几题
@@ -506,6 +513,26 @@ export function GenPanel({
               {judgeCheck && mode !== "compare"
                 ? `judge 自检也跟着缩到这 ${limitCount} 题里。`
                 : ""}
+            </span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-muted-foreground">
+              同时问几道题
+            </span>
+            <NativeSelect
+              value={concurrency}
+              onChange={(event) => setConcurrency(event.target.value)}
+              disabled={running}
+            >
+              {CONCURRENCY_OPTIONS.map((value) => (
+                <NativeSelectOption key={value} value={String(value)}>
+                  {value} 路并发
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <span className="text-[11px] text-muted-foreground">
+              慢在等模型回话，并发几路就快几倍。服务商可能限流，
+              出现「调用失败」就调低一档。
             </span>
           </label>
           {mode === "compare" ? (
@@ -545,6 +572,7 @@ export function GenPanel({
             <span className="text-xs text-muted-foreground">
               {limitCount > 0 ? `${limitCount} 道题` : ""} · 大概 {calls} 次模型请求
               {judgeCalls > 0 ? ` · 含 judge 自检 ${judgeCount} 题` : ""}
+              {concurrencyCount > 1 ? ` · ${concurrencyCount} 路并发` : ""}
             </span>
           )}
         </div>

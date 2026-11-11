@@ -1,5 +1,6 @@
 import { judgeAnswer, scoresAgree } from "./judge.ts";
-import type { EvalDataset, JudgeValidation } from "./schema.ts";
+import { mapWithConcurrency } from "./concurrency.ts";
+import type { EvalDataset, EvalQuestion, JudgeValidation } from "./schema.ts";
 import type { LlmConfig } from "./llm.ts";
 
 /**
@@ -37,6 +38,13 @@ export async function validateJudge(
      * 用户明确说「只跑前几题」时，自检也应该跟着缩到同一批题里。
      */
     limit?: number;
+    /**
+     * 同时自检几道题。
+     *
+     * 自检也是一次模型请求一题，串行等下来最慢。
+     * 调高之后总耗时接近「最慢的那道题」。
+     */
+    concurrency?: number;
   } = {},
 ): Promise<JudgeValidationResult> {
   const scope =
@@ -46,9 +54,10 @@ export async function validateJudge(
   const questions = scope.filter(
     (question) => question.humanScore !== undefined,
   );
-  const details: JudgeValidationDetail[] = [];
 
-  for (const [index, question] of questions.entries()) {
+  const checkOne = async (
+    question: EvalQuestion,
+  ): Promise<JudgeValidationDetail> => {
     const context = question.reference.evidence
       .map(
         (evidence) =>
@@ -63,25 +72,36 @@ export async function validateJudge(
         question.reference.answer,
         context,
       );
-      details.push({
+      return {
         questionId: question.id,
         judgeScore: judged.score,
         humanScore: question.humanScore!,
         agrees: scoresAgree(judged.score, question.humanScore!),
         reason: judged.reason,
-      });
+      };
     } catch (error) {
-      details.push({
+      return {
         questionId: question.id,
         judgeScore: 0,
         humanScore: question.humanScore!,
         agrees: false,
         reason: error instanceof Error ? error.message : String(error),
-      });
+      };
     }
+  };
 
-    options.onProgress?.(index + 1, questions.length);
-  }
+  const concurrency = Math.max(1, Math.floor(options.concurrency ?? 1));
+  let completed = 0;
+  const details = await mapWithConcurrency(
+    questions,
+    concurrency,
+    async (question) => {
+      const detail = await checkOne(question);
+      completed += 1;
+      options.onProgress?.(completed, questions.length);
+      return detail;
+    },
+  );
 
   const scored = details.filter((item) => item.judgeScore > 0);
   const total = scored.length || 1;

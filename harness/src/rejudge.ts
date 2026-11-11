@@ -4,6 +4,7 @@ import { buildIndex, search } from "./retrieval.ts";
 import { judgeAnswer } from "./judge.ts";
 import { classifyFailure, fileLineCounts } from "./failure.ts";
 import { parseAnswerCitations } from "./agent.ts";
+import { mapWithConcurrency } from "./concurrency.ts";
 import { summarize } from "./runner.ts";
 import { estimateCost, type LlmConfig } from "./llm.ts";
 import type {
@@ -22,6 +23,8 @@ export interface RejudgeOptions {
   /** 换谁来打分 */
   judgeLlm: LlmConfig;
   successThreshold: number;
+  /** 同时换几道题的判。1 = 一题一题重打。 */
+  concurrency?: number;
   onProgress?: (done: number, total: number, message: string) => void;
 }
 
@@ -44,9 +47,9 @@ export async function rejudgeRun(options: RejudgeOptions): Promise<EvalRun> {
   const chunks = chunkRepository(files, run.chunking);
   const index = buildIndex(chunks);
 
-  const cases: CaseResult[] = [];
-
-  for (const [position, original] of run.cases.entries()) {
+  const rejudgeOne = async (
+    original: CaseResult,
+  ): Promise<{ result: CaseResult; message: string }> => {
     const question = dataset.questions.find(
       (item) => item.id === original.questionId,
     );
@@ -71,13 +74,10 @@ export async function rejudgeRun(options: RejudgeOptions): Promise<EvalRun> {
       judged = await judgeAnswer(judgeLlm, question, original.answer, context);
     } catch (error) {
       // 换 judge 之后这道题打不了分，不改原来的分数，也不改失败归因
-      cases.push(original);
-      options.onProgress?.(
-        position + 1,
-        run.cases.length,
-        `${original.questionId} 换 judge 失败：${error instanceof Error ? error.message : String(error)}`,
-      );
-      continue;
+      return {
+        result: original,
+        message: `${original.questionId} 换 judge 失败：${error instanceof Error ? error.message : String(error)}`,
+      };
     }
 
     // agent 那次调用的花费不变，只有打分这笔账换了人。
@@ -92,33 +92,44 @@ export async function rejudgeRun(options: RejudgeOptions): Promise<EvalRun> {
     );
     const judgeCost = estimateCost(judged.tokens, judgeLlm.pricePerMillion);
 
-    cases.push({
-      ...original,
-      judgeScore: judged.score,
-      judgeReason: judged.reason,
-      tokens: {
-        ...original.tokens,
-        judgePrompt: judged.tokens.prompt,
-        judgeCompletion: judged.tokens.completion,
-      },
-      cost: agentCost + judgeCost,
-      judgeCost,
-      failureKind: classifyFailure(
-        {
-          answerCitations: parseAnswerCitations(original.answer),
-          evidenceRecall: original.evidenceRecall,
-          judgeScore: judged.score,
-          successThreshold,
+    return {
+      result: {
+        ...original,
+        judgeScore: judged.score,
+        judgeReason: judged.reason,
+        tokens: {
+          ...original.tokens,
+          judgePrompt: judged.tokens.prompt,
+          judgeCompletion: judged.tokens.completion,
         },
-        lineCounts,
-      ),
-    });
-    options.onProgress?.(
-      position + 1,
-      run.cases.length,
-      `${original.questionId} → judge ${judged.score}/5`,
-    );
-  }
+        cost: agentCost + judgeCost,
+        judgeCost,
+        failureKind: classifyFailure(
+          {
+            answerCitations: parseAnswerCitations(original.answer),
+            evidenceRecall: original.evidenceRecall,
+            judgeScore: judged.score,
+            successThreshold,
+          },
+          lineCounts,
+        ),
+      },
+      message: `${original.questionId} → judge ${judged.score}/5`,
+    };
+  };
+
+  const concurrency = Math.max(1, Math.floor(options.concurrency ?? 1));
+  let completed = 0;
+  const cases = await mapWithConcurrency(
+    run.cases,
+    concurrency,
+    async (original) => {
+      const { result, message } = await rejudgeOne(original);
+      completed += 1;
+      options.onProgress?.(completed, run.cases.length, message);
+      return result;
+    },
+  );
 
   return {
     ...run,

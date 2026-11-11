@@ -52,14 +52,14 @@ export { STRATEGIES };
 function usage(): never {
   console.error(
     `用法:
-  node --experimental-strip-types src/cli.ts experiment <dataset.json> <repoRoot> [--out report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案]
+  node --experimental-strip-types src/cli.ts experiment <dataset.json> <repoRoot> [--out report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案] [--concurrency N]
   node --experimental-strip-types src/cli.ts recall <dataset.json> <repoRoot> [--out report.json]
-  node --experimental-strip-types src/cli.ts run <dataset.json> <repoRoot> <strategyId> [--out run.json] [--limit N] [--model 档案] [--judge-model 档案]
-  node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案]
+  node --experimental-strip-types src/cli.ts run <dataset.json> <repoRoot> <strategyId> [--out run.json] [--limit N] [--model 档案] [--judge-model 档案] [--concurrency N]
+  node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案] [--concurrency N]
   node --experimental-strip-types src/cli.ts report <run.json...> [--out report.json]
   node --experimental-strip-types src/cli.ts models [--model 档案]
   node --experimental-strip-types src/cli.ts serve [--port 8787]
-  node --experimental-strip-types src/cli.ts compare <dataset.json> <repoRoot> [--out comparison.json] [--report 旧报告.json] [--report-out 新报告.json] [--agents a,b] [--judges a,b] [--step v7]
+  node --experimental-strip-types src/cli.ts compare <dataset.json> <repoRoot> [--out comparison.json] [--report 旧报告.json] [--report-out 新报告.json] [--agents a,b] [--judges a,b] [--step v7] [--concurrency N]
 
 可用策略: ${Object.keys(STRATEGIES).join(", ")}
 
@@ -74,6 +74,9 @@ manifest 里列出每个项目的评测集、仓库目录和运行记录路径�
 
 judge-check 命令做 judge 自检：让 judge 给人工写的参考答案打分，和人工评分比较。
 
+--concurrency N 让几道题同时问模型：不给就是 1（一题一题来），
+给了就并发跑，整体时间更短，但服务商可能限流。
+
 serve 命令起本地工作台：打开就是填数据和看结果，不需要先读介绍。
 它复用同一套评测代码，只是把结果送到浏览器里。`,
   );
@@ -83,6 +86,18 @@ serve 命令起本地工作台：打开就是填数据和看结果，不需要�
 function flagValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+/**
+ * 同时发几次模型请求。
+ *
+ * 不给就是 1，也就是一题一题来——命令行的输出和以前一模一样。
+ * 给了就并发跑：慢的机器上省时间，但也可能被服务商限流。
+ */
+function readConcurrency(args: string[]): number | undefined {
+  const value = Number(flagValue(args, "--concurrency") ?? "0");
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return Math.floor(value);
 }
 
 /**
@@ -224,6 +239,7 @@ async function main(): Promise<void> {
       );
       console.log(`\njudge 自检：让 judge 给人工参考答案打分（模型 ${judgeLlm.model}）`);
       const validation = await validateJudge(dataset, judgeLlm, {
+        concurrency: readConcurrency(args),
         onProgress: (done, total) =>
           console.log(`  (${done}/${total}) judge 自检`),
       });
@@ -244,6 +260,7 @@ async function main(): Promise<void> {
           judgeLlm,
           successThreshold: 4,
           runId: `${strategy.id}-${Date.now()}`,
+          concurrency: readConcurrency(args),
           onProgress: (done, total, message) =>
             console.log(`  (${done}/${total}) ${message}`),
         });
@@ -315,6 +332,7 @@ async function main(): Promise<void> {
     // judge 自检必须在同一批协议里重跑：阶梯的分数全靠这把尺子。
     console.log(`judge 自检：让 judge 给人工参考答案打分（模型 ${judgeLlm.model}）`);
     const validation = await validateJudge(dataset, judgeLlm, {
+      concurrency: readConcurrency(args),
       onProgress: (done, total) =>
         console.log(`  (${done}/${total}) judge 自检`),
     });
@@ -333,6 +351,7 @@ async function main(): Promise<void> {
       successThreshold: 4,
       reuseRuns: [...(previous?.runs ?? []), ...(previous?.ladderRuns ?? [])],
       limit,
+      concurrency: readConcurrency(args),
       onProgress: (step, done, total, message) =>
         console.log(`  (${done}/${total}) ${message}`),
     });
@@ -445,6 +464,7 @@ async function main(): Promise<void> {
       runId: `${strategy.id}-${Date.now()}`,
       promptVersion,
       limit,
+      concurrency: readConcurrency(args),
       onProgress: (done, total, message) =>
         console.log(`(${done}/${total}) ${message}`),
     });
@@ -602,6 +622,7 @@ async function main(): Promise<void> {
       successThreshold: 4,
       reuseRuns,
       limit,
+      concurrency: readConcurrency(args),
       onProgress: (message) => console.log(`  ${message}`),
     });
 
@@ -658,6 +679,7 @@ async function main(): Promise<void> {
       `judge 自检：${dataset.questions.length} 题的人工参考答案（打分模型 ${judge.config.model}）`,
     );
     const validation = await validateJudge(dataset, judge.config, {
+      concurrency: readConcurrency(args),
       onProgress: (done, total) =>
         console.log(`  (${done}/${total}) judge 自检`),
     });

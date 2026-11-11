@@ -89,6 +89,16 @@ export function estimateCost(
  */
 const MAX_ATTEMPTS = 3;
 
+/**
+ * 限流比别的故障更值得多等一会儿。
+ *
+ * 429 是服务商说「你太快了，等会儿再来」，不是「你这条请求有问题」，
+ * 多等几秒通常就放行了。并发跑的时候它最容易出现，
+ * 所以给它更多次机会和更长的等待——总比让这一题算成失败好。
+ */
+const MAX_RATE_LIMIT_ATTEMPTS = 5;
+const RATE_LIMIT_WAIT_MS = [3000, 8000, 20000, 40000];
+
 /** 5xx 和 429 都属于可重试的服务端瞬时状态。 */
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
@@ -101,15 +111,22 @@ export async function chat(
   const started = Date.now();
   let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_RATE_LIMIT_ATTEMPTS; attempt += 1) {
     try {
       const result = await chatOnce(config, messages);
       return { ...result, latencyMs: Date.now() - started };
     } catch (error) {
       lastError = error;
       const retryable = error instanceof LlmError && error.retryable === true;
-      if (attempt === MAX_ATTEMPTS || !retryable) throw error;
-      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      const limited = error instanceof LlmError && error.status === 429;
+      const maxAttempts = limited ? MAX_RATE_LIMIT_ATTEMPTS : MAX_ATTEMPTS;
+      if (attempt >= maxAttempts || !retryable) throw error;
+      const wait = limited
+        ? RATE_LIMIT_WAIT_MS[
+            Math.min(attempt - 1, RATE_LIMIT_WAIT_MS.length - 1)
+          ]
+        : attempt * 1000;
+      await new Promise((resolve) => setTimeout(resolve, wait));
     }
   }
 

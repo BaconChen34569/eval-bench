@@ -298,6 +298,8 @@ export const api = {
     agentProfiles?: string[];
     judgeProfiles?: string[];
     limit?: number;
+    /** 同时发几次模型请求 */
+    concurrency?: number;
     judgeCheck?: boolean;
     stepId?: string;
   }) =>

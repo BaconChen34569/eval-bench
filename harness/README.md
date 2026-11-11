@@ -112,6 +112,10 @@ node --experimental-strip-types src/cli.ts pricing
 node --experimental-strip-types src/cli.ts run \
   datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --model qwen
 
+# 几道题同时问：整体更快。不给 --concurrency 就是 1 路，和以前一样
+node --experimental-strip-types src/cli.ts run \
+  datasets/flask.json ../corpus/repos/flask-3.1.3 function-level --concurrency 4
+
 # 改了失败归因规则后，重算已有报告的归因（不重新调用模型）
 node --experimental-strip-types scripts/reclassify.ts \
   out/report.json ../corpus/repos/flask-3.1.3
@@ -191,10 +195,26 @@ cd site && npm ci && npm run build
 一次只允许一个任务在跑（每跑一次都是真花钱）。
 结果会额外存一份带时间戳的副本到 `out/`，不覆盖命令行跑出来的 `report.json`。
 
-任务的进度不只是日志行。每种跑法都先列一份阶段计划（哪一阶段、多少题、
+服务的进度不只是日志行。每种跑法都先列一份阶段计划（哪一阶段、多少题、
 每题几次模型请求），跑起来之后按题累加成百分比，所以页面能给出
 「跑到第几题、还剩多少、已经花了多少次模型请求」。
 `GET /api/gen/running` 让刷新后的页面接上还在跑的任务，进度不丢。
+
+### 慢在哪儿：并发与自检复用
+
+生成层的时间几乎全花在等模型解码上：一道题 19 秒，其中被测模型答一次 13 秒、
+judge 再打一次 5.7 秒，而输入大小几乎不影响耗时。两处改动能把等待压下去：
+
+**并发跑题。** 页面上的「同时问几道题」（命令行是 `--concurrency N`）让几道题
+一起问，整体时间就从「所有题加起来」变成「最慢的那道题」。命令行的默认仍然是
+1（一题一题来），所以命令行输出和以前一模一样；页面默认 4 路。
+并发只影响什么时候拿到结果，报告里的题目顺序和分数不受影响。
+服务商限流（429）时客户端会多等几秒再试，实在过不去就把并发调低一档。
+
+**judge 自检复用。** 自检的结论只跟三件事有关：哪把尺子、考的哪批题、哪一版代码。
+这三样都没变的话，上次跑出来的结果就是这次的结果——所以工作台会把它记在
+`out/.judge-checks.json` 里，下次直接用，不再花模型请求，日志里会写明
+「复用 … 的结果」。换了尺子、换了题或者改了打分口径，指纹就变，自检照跑。
 
 模型列表和测连通是两件事：选模型用的是内置的厂商型号表（`src/vendors.ts`），
 不用密钥也能列；「测试连通」才是拿当前配置真去问一次模型，
