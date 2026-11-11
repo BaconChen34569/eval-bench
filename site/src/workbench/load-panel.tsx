@@ -58,11 +58,22 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * 本地时间，后面带上时区。
+ *
+ * 产物文件名里的时间戳是 UTC（结尾的 Z），而这里显示本地时间，
+ * 不标时区的话两个数看着像对不上，其实指的是同一时刻。
+ */
 function formatTime(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const minutes = -date.getTimezoneOffset();
+  const sign = minutes >= 0 ? "+" : "-";
+  const hours = Math.floor(Math.abs(minutes) / 60);
+  const rest = Math.abs(minutes) % 60;
+  const zone = `UTC${sign}${hours}${rest ? `:${pad(rest)}` : ""}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())} (${zone})`;
 }
 
 /**
@@ -231,7 +242,12 @@ export function LoadPanel({
                     onClick={() => void loadFromDisk(item)}
                     className="flex w-full flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary disabled:opacity-50"
                   >
-                    <span className="font-mono">{item.name}</span>
+                    <span
+                      className="font-mono"
+                      title="文件名里的时间戳是 UTC（结尾的 Z），和右边这个本地时间是同一时刻"
+                    >
+                      {item.name}
+                    </span>
                     {item.isHistory && <Badge variant="outline">历史副本</Badge>}
                     <span className="text-muted-foreground">
                       {formatSize(item.size)} · {formatTime(item.mtime)}
@@ -243,6 +259,9 @@ export function LoadPanel({
                 </li>
               ))}
             </ul>
+            <p className="px-3 pb-2 text-[11px] text-muted-foreground">
+              文件名里的 T…Z 是 UTC 时间戳，右边是本地时间（同一时刻的两种写法）。
+            </p>
           </details>
         )}
 
