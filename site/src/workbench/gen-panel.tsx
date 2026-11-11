@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FolderOpen, Loader2, Play, TriangleAlert } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -51,6 +51,13 @@ const MODES: { id: GenMode; label: string; hint: string }[] = [
 /** 并发档位。再高容易被服务商限流，收益也不大。 */
 const CONCURRENCY_OPTIONS = [1, 2, 4, 8];
 
+/** 跑法名字，用来标出「这条运行情况/这份结果是谁的」。 */
+const MODE_LABELS: Record<GenMode, string> = {
+  single: "单模型",
+  ladder: "迭代阶梯",
+  compare: "多模型对比",
+};
+
 /**
  * 等的时候该说的话。
  *
@@ -87,14 +94,18 @@ function formatDuration(ms: number): string {
  */
 export function GenPanel({
   health,
+  mode,
+  onModeChange,
   onReport,
 }: {
   health: Health | null;
-  onReport: (report: ExperimentReport) => void;
+  /** 跑法由外面控制：结果区要跟着跑法换报告，两边得是同一个。 */
+  mode: GenMode;
+  onModeChange: (mode: GenMode) => void;
+  onReport: (report: ExperimentReport, mode: GenMode) => void;
 }) {
   const [options, setOptions] = useState<GenOptions | null>(null);
   const [datasetDetail, setDatasetDetail] = useState<WorkDataset | null>(null);
-  const [mode, setMode] = useState<GenMode>("single");
   const [datasetId, setDatasetId] = useState("");
   const [repoRoot, setRepoRoot] = useState("");
   const [agentProfile, setAgentProfile] = useState("");
@@ -106,11 +117,43 @@ export function GenPanel({
   const [concurrency, setConcurrency] = useState("4");
   const [judgeCheck, setJudgeCheck] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [job, setJob] = useState<GenJob | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** 连不上服务这类问题跟跑法无关，单独放一份。 */
+  const [setupError, setSetupError] = useState<string | null>(null);
+  /**
+   * 三种跑法各记各的运行情况。
+   *
+   * 之前只有一份状态：单模型跑完切到阶梯，进度和日志还挂在单模型那条上，
+   * 看着像阶梯已经跑过。分开之后，每种跑法只认自己那一份。
+   */
+  const [jobs, setJobs] = useState<Record<GenMode, GenJob | null>>({
+    single: null,
+    ladder: null,
+    compare: null,
+  });
+  const [errors, setErrors] = useState<Record<GenMode, string | null>>({
+    single: null,
+    ladder: null,
+    compare: null,
+  });
   const [clock, setClock] = useState(() => Date.now());
   const appliedRef = useRef<string | null>(null);
   const logRef = useRef<HTMLPreElement | null>(null);
+
+  /** 服务端同一时间只跑一个任务，跑着的那个归它自己那一栏。 */
+  const runningJob = useMemo(
+    () => Object.values(jobs).find((item) => item?.status === "running") ?? null,
+    [jobs],
+  );
+
+  /** 当前跑法自己的那一次运行。 */
+  const job = jobs[mode];
+  /** 当前跑法正在跑。 */
+  const running = job?.status === "running";
+  /** 服务端同时只跑一个任务，所以有没有任务在跑要跨跑法看。 */
+  const busy = runningJob !== null;
+  /** 跑着的是别的跑法时，提示它还在哪儿跑。 */
+  const otherRunning =
+    runningJob && runningJob.mode !== mode ? runningJob : null;
 
   useEffect(() => {
     void api
@@ -128,7 +171,7 @@ export function GenPanel({
         setStepId((current) => current || next.ladder[next.ladder.length - 1]?.id || "");
       })
       .catch((cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : String(cause)),
+        setSetupError(cause instanceof Error ? cause.message : String(cause)),
       );
   }, []);
 
@@ -164,25 +207,27 @@ export function GenPanel({
   const poll = useCallback(async (id: string) => {
     try {
       const next = await api.genJob(id);
-      setJob(next);
-      if (next.status !== "running") setError(next.error ?? null);
+      setJobs((prev) => ({ ...prev, [next.mode]: next }));
+      if (next.status !== "running") {
+        setErrors((prev) => ({ ...prev, [next.mode]: next.error ?? null }));
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setSetupError(cause instanceof Error ? cause.message : String(cause));
     }
   }, []);
 
   useEffect(() => {
-    if (!job || job.status !== "running") return;
-    const timer = setInterval(() => void poll(job.id), 1500);
+    if (!runningJob) return;
+    const timer = setInterval(() => void poll(runningJob.id), 1500);
     return () => clearInterval(timer);
-  }, [job, poll]);
+  }, [runningJob?.id, poll]);
 
   // 跑着的时候每秒走一下表，用来算「已经跑了多久」「大概还要多久」。
   useEffect(() => {
-    if (!job || job.status !== "running") return;
+    if (!runningJob) return;
     const timer = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [job]);
+  }, [runningJob?.id]);
 
   // 日志一直往下滚，用户不用手动拖。
   useEffect(() => {
@@ -196,26 +241,24 @@ export function GenPanel({
       .genRunning()
       .then((current) => {
         if (!current || current.status !== "running") return;
-        setJob(current);
+        setJobs((prev) => ({ ...prev, [current.mode]: current }));
         // 任务跑的是哪种跑法，表单就跟着显示哪种，别让人以为跑错了。
-        setMode(current.mode);
+        onModeChange(current.mode);
       })
       .catch(() => {
         // 服务刚起的时候可能还没准备好，忽略即可
       });
-  }, []);
+  }, [onModeChange]);
 
   // 跑完就把报告送进结果区。同一份报告只送一次。
   useEffect(() => {
     if (!job || job.status !== "done" || !job.report) return;
     if (appliedRef.current === job.id) return;
     appliedRef.current = job.id;
-    onReport(job.report);
+    onReport(job.report, job.mode);
   }, [job, onReport]);
 
-  const running = job?.status === "running";
   const profiles = options?.profiles ?? [];
-
   const progress = job?.progress;
   const elapsedMs = job
     ? Math.max(
@@ -232,8 +275,7 @@ export function GenPanel({
   const tip = WAIT_TIPS[Math.floor(elapsedMs / 12000) % WAIT_TIPS.length];
 
   const start = async () => {
-    setError(null);
-    setJob(null);
+    setErrors((prev) => ({ ...prev, [mode]: null }));
     appliedRef.current = null;
     try {
       const payload = {
@@ -255,25 +297,31 @@ export function GenPanel({
             }),
       };
       const started = await api.startGen(payload);
-      setJob({
-        id: started.jobId,
-        mode: started.mode,
-        status: "running",
-        log: [],
-        progress: {
-          stage: "准备中",
-          stageDone: 0,
-          stageTotal: 0,
-          percent: 0,
-          done: 0,
-          total: 0,
-          calls: 0,
-          callsEstimate: 0,
+      setJobs((prev) => ({
+        ...prev,
+        [mode]: {
+          id: started.jobId,
+          mode: started.mode,
+          status: "running",
+          log: [],
+          progress: {
+            stage: "准备中",
+            stageDone: 0,
+            stageTotal: 0,
+            percent: 0,
+            done: 0,
+            total: 0,
+            calls: 0,
+            callsEstimate: 0,
+          },
+          startedAt: started.startedAt,
         },
-        startedAt: started.startedAt,
-      });
+      }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setErrors((prev) => ({
+        ...prev,
+        [mode]: cause instanceof Error ? cause.message : String(cause),
+      }));
     }
   };
 
@@ -323,15 +371,23 @@ export function GenPanel({
             <button
               key={item.id}
               type="button"
-              disabled={running}
-              onClick={() => setMode(item.id)}
-              className={`inline-flex min-h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors disabled:opacity-50 ${
+              onClick={() => onModeChange(item.id)}
+              className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors ${
                 mode === item.id
                   ? "border-transparent bg-primary text-primary-foreground"
                   : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
               {item.label}
+              {jobs[item.id]?.status === "done" && (
+                <span
+                  className="size-1.5 rounded-full bg-current"
+                  title="这个跑法已经跑过了，结果在下面"
+                />
+              )}
+              {jobs[item.id]?.status === "running" && (
+                <Loader2 className="size-3 animate-spin" />
+              )}
             </button>
           ))}
         </div>
@@ -558,15 +614,15 @@ export function GenPanel({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            disabled={running || !datasetId || profiles.length === 0}
+            disabled={busy || !datasetId || profiles.length === 0}
             onClick={() => void start()}
           >
-            {running ? (
+            {busy ? (
               <Loader2 className="mr-1 size-4 animate-spin" />
             ) : (
               <Play className="mr-1 size-4" />
             )}
-            {running ? "跑着呢" : "开始跑"}
+            {busy ? "跑着呢" : "开始跑"}
           </Button>
           {questionCount > 0 && (
             <span className="text-xs text-muted-foreground">
@@ -577,9 +633,35 @@ export function GenPanel({
           )}
         </div>
 
-        {job && (
+        {otherRunning && (
+          <p className="flex flex-wrap items-center gap-2 rounded-md bg-secondary/60 px-3 py-2 text-[11px] text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            <span>
+              「{MODE_LABELS[otherRunning.mode]}」还在跑（已用{" "}
+              {formatDuration(
+                Math.max(
+                  0,
+                  (otherRunning.finishedAt
+                    ? new Date(otherRunning.finishedAt).getTime()
+                    : clock) - new Date(otherRunning.startedAt).getTime(),
+                ),
+              )}
+              ），进度在那一栏里。
+            </span>
+            <button
+              type="button"
+              onClick={() => onModeChange(otherRunning.mode)}
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              去看
+            </button>
+          </p>
+        )}
+
+        {job ? (
           <div className="flex flex-col gap-3 rounded-lg border bg-card px-3 py-3">
             <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">跑法：{MODE_LABELS[mode]}</Badge>
               <Badge
                 variant={
                   job.status === "done"
@@ -649,16 +731,30 @@ export function GenPanel({
             )}
             {job.status === "done" && (
               <p className="text-xs text-muted-foreground">
-                结果已经送到下面的结果区，和公开站是同一套图表。
+                这份「{MODE_LABELS[mode]}」的结果已经送到下面的结果区，
+                和公开站是同一套图表。
               </p>
             )}
           </div>
+        ) : (
+          <div className="rounded-lg border border-dashed px-3 py-4 text-xs leading-relaxed text-muted-foreground">
+            「{MODE_LABELS[mode]}」这个跑法还没跑过。
+            上面配好参数点「开始跑」，它的运行情况和结果都会记在这一栏里，
+            不会跟别的跑法混在一起。
+          </div>
         )}
 
-        {error && (
+        {errors[mode] && (
           <Alert variant="destructive">
             <AlertTitle>出错了</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription>{errors[mode]}</AlertDescription>
+          </Alert>
+        )}
+
+        {setupError && (
+          <Alert variant="destructive">
+            <AlertTitle>本地服务出问题了</AlertTitle>
+            <AlertDescription>{setupError}</AlertDescription>
           </Alert>
         )}
 

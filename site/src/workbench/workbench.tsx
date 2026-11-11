@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,12 +7,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle, useTheme } from "@/components/theme-toggle";
 
 import { setReport, emptyReport, type ExperimentReport } from "@/data/report";
-import { api, type Health } from "@/src/workbench/api";
+import { api, type GenMode, type Health } from "@/src/workbench/api";
 import { DatasetPanel } from "@/src/workbench/dataset-panel";
 import { GenPanel } from "@/src/workbench/gen-panel";
 import { LoadPanel } from "@/src/workbench/load-panel";
 import { ReportPanel } from "@/src/workbench/report-panel";
 import { SecretsPanel } from "@/src/workbench/secrets-panel";
+
+/** 三种跑法的名字，结果区要标出现在摆的是哪一份。 */
+const GEN_MODE_LABELS: Record<GenMode, string> = {
+  single: "单模型",
+  ladder: "迭代阶梯",
+  compare: "多模型对比",
+};
 
 /**
  * 本地工作台。
@@ -29,14 +36,24 @@ export function Workbench() {
    * 三份结果各归各的模块：
    * 「填数据出图」载入的报告、「录题集跑评测」跑出来的报告、
    * 「跑生成层」跑出来的报告互不串台。
+   * 生成层内部再按跑法分开：单模型、迭代阶梯、多模型对比各存各的，
+   * 跑完一种切到另一种，看到的还是刚跑完那一种的结果。
    */
   const [reports, setReports] = useState<{
     load: ExperimentReport | null;
     dataset: ExperimentReport | null;
-    gen: ExperimentReport | null;
-  }>({ load: null, dataset: null, gen: null });
+    gen: Record<GenMode, ExperimentReport | null>;
+  }>({
+    load: null,
+    dataset: null,
+    gen: { single: null, ladder: null, compare: null },
+  });
+  const [genMode, setGenMode] = useState<GenMode>("single");
   const [theme, setTheme] = useTheme();
   const resultRef = useRef<HTMLElement>(null);
+  /** 报告的当前值。换个跑法时要立刻拿到最新那份，所以放一份 ref。 */
+  const reportsRef = useRef(reports);
+  reportsRef.current = reports;
 
   useEffect(() => {
     api
@@ -52,30 +69,66 @@ export function Workbench() {
 
   // 数据换了一份就把结果面板整块重挂一次，
   // 这样组件里 useMemo 缓存的旧结果不会留在屏幕上。
-  const applyReport = (
-    next: ExperimentReport,
-    source: "load" | "dataset" | "gen",
-  ) => {
-    setReports((prev) => ({ ...prev, [source]: next }));
-    setReport(next);
+  const applyReport = useCallback(
+    (
+      next: ExperimentReport,
+      source: "load" | "dataset" | GenMode,
+    ) => {
+      if (source === "load" || source === "dataset") {
+        setReports((prev) => ({ ...prev, [source]: next }));
+        setReport(next);
+        setVersion((value) => value + 1);
+        // 结果区在页面最下面，跑完评测得让人看见图，别自己去找。
+        window.requestAnimationFrame(() => {
+          resultRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        });
+        return;
+      }
+      // 生成层：先按跑法存起来。是不是现在摆出来，看当前跑法是不是这一种。
+      setReports((prev) => ({
+        ...prev,
+        gen: { ...prev.gen, [source]: next },
+      }));
+      if (source !== genMode) return;
+      setReport(next);
+      setVersion((value) => value + 1);
+      window.requestAnimationFrame(() => {
+        resultRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    },
+    [genMode],
+  );
+
+  // 换跑法就把这一种跑法的结果端上桌：没跑过的跑法是空的，
+  // 不能把上一种跑法的结果留在那儿冒充。
+  const changeGenMode = useCallback((next: GenMode) => {
+    setGenMode(next);
+    setReport(reportsRef.current.gen[next] ?? emptyReport());
     setVersion((value) => value + 1);
-    // 结果区在页面最下面，跑完评测得让人看见图，别自己去找。
-    window.requestAnimationFrame(() => {
-      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  };
+  }, []);
+
+  // 生成层跑完，把报告按跑法存起来。
+  const handleGenReport = useCallback(
+    (next: ExperimentReport, mode: GenMode) => applyReport(next, mode),
+    [applyReport],
+  );
 
   // 换页时把这一页该看的报告放上桌：没跑过的页就是空的，
   // 不能把另一页的结果端过来。
-  const switchTab = (next: string) => {
-    setTab(next);
+  const switchTab = (next: string) => {    setTab(next);
     if (next === "secrets") return;
     const target =
       next === "load"
         ? reports.load
         : next === "dataset"
           ? reports.dataset
-          : reports.gen;
+          : reports.gen[genMode];
     setReport(target ?? emptyReport());
     setVersion((value) => value + 1);
   };
@@ -160,12 +213,15 @@ export function Workbench() {
           <TabsContent value="gen" className="flex flex-col gap-4">
             <GenPanel
               health={health}
-              onReport={(next) => applyReport(next, "gen")}
+              mode={genMode}
+              onModeChange={changeGenMode}
+              onReport={handleGenReport}
             />
             <ResultSection
               variant="gen"
               resultRef={resultRef}
               version={version}
+              note={`跑法：${GEN_MODE_LABELS[genMode]}`}
             />
           </TabsContent>
 
@@ -188,16 +244,24 @@ function ResultSection({
   variant,
   resultRef,
   version,
+  note,
 }: {
   variant: "load" | "dataset" | "gen";
   resultRef: RefObject<HTMLElement | null>;
   version: number;
+  /** 现在摆的是哪一份结果，说清楚免得看成别的跑法的。 */
+  note?: string;
 }) {
   return (
     <section ref={resultRef} className="flex flex-col gap-4 scroll-mt-20">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">
+        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-muted-foreground">
           结果
+          {note && (
+            <Badge variant="outline" className="font-normal">
+              {note}
+            </Badge>
+          )}
         </h2>
         <span className="text-xs text-muted-foreground">
           图表和公开站是同一套组件，数字来自同一份报告
