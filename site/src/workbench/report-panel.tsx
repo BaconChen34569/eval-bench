@@ -19,6 +19,7 @@ import {
   formatPercent,
   ladder,
   modelComparison,
+  narrative,
   questions,
   report,
   runs,
@@ -143,6 +144,16 @@ export function ReportPanel({
               </tbody>
             </table>
           </div>
+          {narrative.strategies ? (
+            <div className="mt-3 rounded-lg border bg-secondary px-3 py-2">
+              <p className="text-sm leading-relaxed">{narrative.strategies}</p>
+              {narrative.model ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  这段评语由 {narrative.model} 照着这次跑出来的数字生成。
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <p className="mt-3 text-xs text-muted-foreground">
             数据集 {report.datasetId} · 仓库 {report.repo} ·{" "}
             {questions.length} 题 ·{" "}

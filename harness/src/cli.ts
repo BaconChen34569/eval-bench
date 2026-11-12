@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { runEvaluation } from "./runner.ts";
+import { runEvaluation, scopeQuestions } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
 import { listModels } from "./llm.ts";
@@ -12,6 +12,7 @@ import {
 } from "./profiles.ts";
 import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
+import { generateNarrative } from "./narrative.ts";
 import { readBaseline } from "./baseline.ts";
 import { buildMultiProjectComparison, type ProjectManifest } from "./projects.ts";
 import { CODE_CHANGES, CODE_VERSION } from "./schema.ts";
@@ -57,6 +58,7 @@ function usage(): never {
   node --experimental-strip-types src/cli.ts run <dataset.json> <repoRoot> <strategyId> [--out run.json] [--limit N] [--model 档案] [--judge-model 档案] [--concurrency N]
   node --experimental-strip-types src/cli.ts ladder <dataset.json> <repoRoot> [--out report.json] [--reuse report.json] [--baseline 旧报告.json] [--model 档案] [--judge-model 档案] [--concurrency N]
   node --experimental-strip-types src/cli.ts report <run.json...> [--out report.json]
+  node --experimental-strip-types src/cli.ts narrate <report.json> [--out report.json] [--model 档案]
   node --experimental-strip-types src/cli.ts models [--model 档案]
   node --experimental-strip-types src/cli.ts serve [--port 8787]
   node --experimental-strip-types src/cli.ts compare <dataset.json> <repoRoot> [--out comparison.json] [--report 旧报告.json] [--report-out 新报告.json] [--agents a,b] [--judges a,b] [--step v7] [--concurrency N]
@@ -73,6 +75,9 @@ projects 命令做多项目对比：不同仓库用同一份配置各跑一轮�
 manifest 里列出每个项目的评测集、仓库目录和运行记录路径。
 
 judge-check 命令做 judge 自检：让 judge 给人工写的参考答案打分，和人工评分比较。
+
+narrate 命令给已有报告补 AI 评语：照着这次跑出来的数字写一段话，
+不重跑任何评测，只多花几次模型请求。
 
 --concurrency N 让几道题同时问模型：不给就是 1（一题一题来），
 给了就并发跑，整体时间更短，但服务商可能限流。
@@ -342,7 +347,14 @@ async function main(): Promise<void> {
         `  judge 均分 ${judgeValidation.meanJudgeScore.toFixed(2)} vs 人工均分 ${judgeValidation.meanHumanScore.toFixed(2)}`,
     );
 
-    console.log(`\n迭代阶梯：${dataset.questions.length} 题 × ${LADDER.length} 轮`);
+    // 只跑前 N 题时，题数按实际跑的算，别再报题集的总题数。
+    const scope = scopeQuestions(dataset, limit);
+    console.log(
+      `\n迭代阶梯：${scope.length} 题 × ${LADDER.length} 轮` +
+        (scope.length < dataset.questions.length
+          ? `（只跑前 ${scope.length} 题）`
+          : ""),
+    );
     const { steps, runs: ladderRuns } = await runLadder({
       dataset,
       repoRoot,
@@ -365,8 +377,9 @@ async function main(): Promise<void> {
     }
 
     // 横向策略对比那一段仍然要，站点上两个板块共用一份报告。
+    // 检索层要和生成层量同一批题，两个分母不一样就没法对照。
     const strategyMetrics = await runRetrievalEval({
-      dataset,
+      dataset: { ...dataset, questions: scope },
       repoRoot,
       strategies: Object.values(STRATEGIES),
       retrieval: DEFAULT_RETRIEVAL,
@@ -749,6 +762,34 @@ async function main(): Promise<void> {
       await writeJson(reportPath, report);
       console.log(`报告已写入 ${reportPath}`);
     }
+    return;
+  }
+
+  if (command === "narrate") {
+    const [reportPath] = args;
+    if (!reportPath) usage();
+
+    const outputPath = flagValue(args, "--out") ?? reportPath;
+    const { judge } = selectModels(process.env, args);
+    const report = JSON.parse(
+      await readFile(reportPath, "utf8"),
+    ) as ExperimentReport;
+
+    console.log(
+      `AI 评语：用 ${judge.label}（${judge.config.model}）照着这次跑出来的数字讲一段话`,
+    );
+    const { narrative, failed } = await generateNarrative(report, judge.config);
+    report.narrative = { ...(report.narrative ?? {}), ...narrative };
+
+    for (const [key, text] of Object.entries(report.narrative)) {
+      console.log(`  【${key}】${text}`);
+    }
+    if (failed.length > 0) {
+      console.log(`  没写出来的板块：${failed.join("、")}`);
+    }
+
+    await writeJson(outputPath, report);
+    console.log(`\n报告已写入 ${outputPath}`);
     return;
   }
 

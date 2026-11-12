@@ -1,8 +1,8 @@
 import {
   Bar,
-  BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   LabelList,
   Line,
   LineChart,
@@ -26,6 +26,7 @@ import {
   formatPercent,
   ladder,
   ladderRuns,
+  narrative,
   type QuestionCategory,
 } from "@/data/report";
 
@@ -62,6 +63,12 @@ export function LadderSection() {
     context: step.retrievalMetrics.avgContextChars,
   }));
 
+  // 柱子是花钱，线是上下文。两个量纲不一样，就分成两条轴。
+  // 之前柱子是上下文字符、标签写的是钱，读起来自相矛盾。
+  const maxCost = Math.max(...cost.map((item) => item.cost), 0);
+  const costMax = maxCost > 0 ? maxCost * 1.25 : 1;
+  const allFree = maxCost === 0;
+
   const best = ladder.reduce((a, b) =>
     b.summary.successRate > a.summary.successRate ||
     (b.summary.successRate === a.summary.successRate &&
@@ -80,11 +87,14 @@ export function LadderSection() {
     ) {
       return [];
     }
-    const rise = Math.round(
-      ((step.summary.totalCost - previous.summary.totalCost) /
-        previous.summary.totalCost) *
-        100,
-    );
+    const rise =
+      previous.summary.totalCost > 0
+        ? Math.round(
+            ((step.summary.totalCost - previous.summary.totalCost) /
+              previous.summary.totalCost) *
+              100,
+          )
+        : null;
     return [{ step, rise }];
   });
   // 单独一轮把成功率拉低的情况。这也得说出来，
@@ -112,6 +122,16 @@ export function LadderSection() {
 
   return (
     <div className="flex flex-col gap-6">
+      {narrative.ladder ? (
+        <div className="rounded-xl border border-chart-2/30 bg-chart-2/10 px-5 py-4">
+          <p className="text-sm leading-relaxed">{narrative.ladder}</p>
+          {narrative.model ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              这段评语由 {narrative.model} 照着这次跑出来的数字生成，数字本身来自上面的运行记录。
+            </p>
+          ) : null}
+        </div>
+      ) : (
       <div className="rounded-xl border border-chart-2/30 bg-chart-2/10 px-5 py-4">
         <p className="text-sm leading-relaxed">
           {ladder.length} 轮跑下来，最优的是{" "}
@@ -146,7 +166,9 @@ export function LadderSection() {
               {flat
                 .map(
                   ({ step, rise }) =>
-                    `${step.id} 单独看没有换来更高的成功率，成本反而涨了 ${rise}%`,
+                    rise === null
+                      ? `${step.id} 单独看没有换来更高的成功率，成本却从 ¥0 涨到了 ¥${step.summary.totalCost.toFixed(4)}`
+                      : `${step.id} 单独看没有换来更高的成功率，成本反而涨了 ${rise}%`,
                 )
                 .join("；")}
               。它的改动被后面的轮次继承，所以判断一个改动有没有用，本来就不能只看一轮。
@@ -175,6 +197,7 @@ export function LadderSection() {
           ) : null}
         </p>
       </div>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         <CardShell
           title="检索涨了，生成跟上来了吗"
@@ -237,16 +260,27 @@ export function LadderSection() {
 
         <CardShell
           title="每一轮的代价"
-          description="上下文变大会直接换算成 token 成本。放宽检索预算能多捞回一点证据，但账单会跟着涨。"
+          description="柱子是这一轮真花的钱，折线是送进模型的上下文字符数。上下文变大会直接换算成 token 成本。"
         >
           <ChartContainer config={costConfig} className="h-[260px] w-full">
-            <BarChart data={cost} margin={{ left: 4, right: 4, top: 16 }}>
+            <ComposedChart data={cost} margin={{ left: 4, right: 4, top: 16 }}>
               <CartesianGrid vertical={false} />
               <XAxis dataKey="label" tickLine={false} tickMargin={8} fontSize={12} />
               <YAxis
+                yAxisId="cost"
+                domain={[0, costMax]}
                 tickLine={false}
                 axisLine={false}
-                width={48}
+                width={56}
+                fontSize={12}
+                tickFormatter={(value: number) => `¥${Number(value).toFixed(2)}`}
+              />
+              <YAxis
+                yAxisId="context"
+                orientation="right"
+                tickLine={false}
+                axisLine={false}
+                width={44}
                 fontSize={12}
                 tickFormatter={(value: number) => `${Math.round(value / 1000)}k`}
               />
@@ -274,9 +308,14 @@ export function LadderSection() {
                   />
                 }
               />
-              <Bar dataKey="context" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              <Bar
+                dataKey="cost"
+                yAxisId="cost"
+                radius={[4, 4, 0, 0]}
+                isAnimationActive={false}
+              >
                 {cost.map((item) => (
-                  <Cell key={item.label} fill="var(--color-context)" />
+                  <Cell key={item.label} fill="var(--color-cost)" />
                 ))}
                 <LabelList
                   dataKey="cost"
@@ -286,8 +325,24 @@ export function LadderSection() {
                   fill="var(--foreground)"
                 />
               </Bar>
-            </BarChart>
+              <Line
+                type="monotone"
+                dataKey="context"
+                yAxisId="context"
+                stroke="var(--color-context)"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                isAnimationActive={false}
+              />
+              <ChartLegend content={<ChartLegendContent />} />
+            </ComposedChart>
           </ChartContainer>
+          {allFree ? (
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+              这次用的模型是免费档，账单是 0：柱子贴着底不代表这一轮没开销，
+              请求量和上下文照样在涨，折线能看出账单之外的那部分。
+            </p>
+          ) : null}
         </CardShell>
       </div>
 

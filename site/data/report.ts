@@ -227,6 +227,8 @@ export interface ExperimentReport {
   modelComparison?: ModelComparison;
   /** 多项目对比：同一份配置下，几个不同仓库各跑一轮 */
   multiProject?: MultiProjectComparison;
+  /** AI 写的评语，站点优先用它，没有才用规则模板 */
+  narrative?: ReportNarrative;
 }
 
 /**
@@ -299,6 +301,25 @@ export interface MultiProjectComparison {
   successThreshold: number;
   rows: ProjectComparisonRow[];
   note: string;
+}
+
+/**
+ * AI 写的评语。
+ *
+ * 数字全部来自这次跑出来的结果，模型只负责把它们讲成人话；
+ * 没有 AI 评语时站点回落到规则模板，两边都不会空着。
+ */
+export interface ReportNarrative {
+  /** 迭代阶梯 */
+  ladder?: string;
+  /** 切分策略横向对比 */
+  strategies?: string;
+  /** 多模型对比 */
+  modelComparison?: string;
+  /** 多项目对比 */
+  multiProject?: string;
+  /** 写这些评语的模型 id */
+  model?: string;
 }
 
 /** 一个被测模型在某个 judge 手里拿到的成绩。 */
@@ -462,6 +483,9 @@ export let modelComparison: ModelComparison | undefined;
 /** 多项目对比数据，旧报告没带时为 undefined。 */
 export let multiProject: MultiProjectComparison | undefined;
 
+/** AI 写的评语。报告里没带时是空对象，各板块回落到规则模板。 */
+export let narrative: ReportNarrative = {};
+
 /** 生成层运行记录，按策略顺序排好。 */
 export let runs: EvalRun[] = [];
 
@@ -496,6 +520,7 @@ export function setReport(next: ExperimentReport): void {
   changes = next.changes ?? [];
   modelComparison = next.modelComparison;
   multiProject = next.multiProject;
+  narrative = next.narrative ?? {};
 
   runs = [...(next.runs ?? [])].sort(
     (a, b) =>
@@ -515,7 +540,24 @@ export function setReport(next: ExperimentReport): void {
       if (!map.has(item.questionId)) map.set(item.questionId, item);
     }
   }
-  questions = [...map.values()].sort((a, b) =>
+
+  // 逐题检索台只列真跑过的题。
+  //
+  // 检索层量的是题集里全部题，生成层可能只跑了其中几题
+  // （本地工作台的「只跑前几题」）。没跑过的题列出来，
+  // 表格里就是一排空行——看着像「这题答错了」，其实是压根没测。
+  const answered = new Set<string>();
+  for (const run of [...runs, ...ladderRuns]) {
+    for (const item of run.cases) answered.add(item.questionId);
+  }
+  for (const row of modelComparison?.rows ?? []) {
+    for (const item of row.caseScores) answered.add(item.questionId);
+  }
+  const visible = answered.size
+    ? [...map.values()].filter((item) => answered.has(item.questionId))
+    : [...map.values()];
+
+  questions = visible.sort((a, b) =>
     a.questionId.localeCompare(b.questionId, undefined, { numeric: true }),
   );
 

@@ -11,12 +11,13 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runEvaluation } from "./runner.ts";
+import { runEvaluation, scopeQuestions } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
 import { validateJudge } from "./judge-validation.ts";
 import { judgeCheckKey, readJudgeCheck, writeJudgeCheck } from "./judge-cache.ts";
 import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
+import { generateNarrative } from "./narrative.ts";
 import { readyProfiles, resolveProfile, type ReadyProfile } from "./profiles.ts";
 import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION, type EvalDataset, type EvalRun, type ExperimentReport, type JudgeValidation } from "./schema.ts";
@@ -211,6 +212,20 @@ function questionCount(options: GenJobOptions): number {
 }
 
 /**
+ * 只跑前 N 题时，检索层也只量这 N 题。
+ *
+ * 检索层不花钱，但它的分母得和生成层一样：
+ * 检索层量 22 题、生成层跑 3 题的话，
+ * 「检索涨了，生成跟上了吗」这条因果链根本接不上。
+ */
+function scopedDataset(options: GenJobOptions): EvalDataset {
+  return {
+    ...options.dataset,
+    questions: scopeQuestions(options.dataset, options.limit),
+  };
+}
+
+/**
  * judge 自检会抽多少题。
  *
  * 只有带人工评分的题才参与；「只跑前几题」时也只看这几题，
@@ -369,7 +384,7 @@ async function runSingle(
   sync();
   job.log.push("检索层评测（不调模型，不花钱）…");
   const metrics = await runRetrievalEval({
-    dataset: options.dataset,
+    dataset: scopedDataset(options),
     repoRoot: options.repoRoot,
     strategies: STRATEGY_LIST,
     retrieval: DEFAULT_RETRIEVAL,
@@ -499,7 +514,12 @@ async function runLadderJob(
     job.log.push(`复用 ${reuse.length} 条已有运行记录（配置一致的轮次不再重跑）`);
   }
 
-  job.log.push(`迭代阶梯：${options.dataset.questions.length} 题 × ${LADDER.length} 轮`);
+  job.log.push(
+    `迭代阶梯：${questions} 题 × ${LADDER.length} 轮` +
+      (questions < options.dataset.questions.length
+        ? `（只跑前 ${questions} 题）`
+        : ""),
+  );
   const { steps, runs } = await runLadder({
     dataset: options.dataset,
     repoRoot: options.repoRoot,
@@ -530,7 +550,7 @@ async function runLadderJob(
   sync();
   job.log.push("检索层评测（不调模型，不花钱）…");
   const metrics = await runRetrievalEval({
-    dataset: options.dataset,
+    dataset: scopedDataset(options),
     repoRoot: options.repoRoot,
     strategies: STRATEGY_LIST,
     retrieval: DEFAULT_RETRIEVAL,
@@ -629,7 +649,7 @@ async function runCompareJob(
   sync();
   job.log.push("检索层评测（不调模型，不花钱）…");
   const metrics = await runRetrievalEval({
-    dataset: options.dataset,
+    dataset: scopedDataset(options),
     repoRoot: options.repoRoot,
     strategies: STRATEGY_LIST,
     retrieval: DEFAULT_RETRIEVAL,
@@ -691,6 +711,32 @@ export function startGenJob(
           : options.mode === "compare"
             ? await runCompareJob(job, options, env, outDir)
             : await runSingle(job, options, env, outDir);
+
+      // 评语照着这次跑出来的数字写，不重跑评测，只多几次模型请求。
+      job.progress = { ...job.progress, stage: "AI 写评语" };
+      job.log.push("AI 写评语（照着这次跑出来的数字，不重跑评测）…");
+      try {
+        const narrator = resolveProfile(env, options.judgeProfile ?? options.agentProfile);
+        const { narrative, failed } = await generateNarrative(report, narrator.config);
+        report.narrative = { ...(report.narrative ?? {}), ...narrative };
+        const written = Object.keys(narrative).length;
+        job.progress = {
+          ...job.progress,
+          calls: job.progress.calls + written,
+        };
+        job.log.push(
+          written > 0
+            ? `  写好了 ${written} 段评语`
+            : "  没写出评语，站点会改用规则模板",
+        );
+        if (failed.length > 0) {
+          job.log.push(`  没写出来的板块：${failed.join("、")}`);
+        }
+      } catch (error) {
+        job.log.push(
+          `  评语没写成：${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
       job.report = report;
       job.status = "done";

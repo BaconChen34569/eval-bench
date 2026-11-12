@@ -65,6 +65,21 @@ function percentile(values: number[], p: number): number {
   return sorted[index];
 }
 
+/**
+ * 这次真正要跑的那几道题。
+ *
+ * 「只跑前 N 题」是把题集按顺序截一段，不是不选题——
+ * 全站只有这一种缩小范围的方式，别的入口也得用同一套，
+ * 否则同一个 limit 在两个地方会量出两批不同的题。
+ */
+export function scopeQuestions(
+  dataset: EvalDataset,
+  limit?: number,
+): EvalQuestion[] {
+  if (!limit || limit <= 0) return dataset.questions;
+  return dataset.questions.slice(0, limit);
+}
+
 export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
   const {
     dataset,
@@ -84,9 +99,7 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
   const chunks = chunkRepository(files, chunking);
   const index = buildIndex(chunks);
 
-  const questions = options.limit
-    ? dataset.questions.slice(0, options.limit)
-    : dataset.questions;
+  const questions = scopeQuestions(dataset, options.limit);
 
   const cases: CaseResult[] = [];
 

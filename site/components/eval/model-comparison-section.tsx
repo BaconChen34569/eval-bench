@@ -19,6 +19,7 @@ import {
   formatNumber,
   formatPercent,
   modelComparison,
+  narrative,
   type ModelComparisonRow,
 } from "@/data/report";
 
@@ -149,6 +150,16 @@ export function ModelComparisonSection() {
 
   return (
     <div className="flex flex-col gap-6">
+      {narrative.modelComparison ? (
+        <div className="rounded-xl border border-chart-1/30 bg-chart-1/10 px-5 py-4">
+          <p className="text-sm leading-relaxed">{narrative.modelComparison}</p>
+          {narrative.model ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              这段评语由 {narrative.model} 照着这次跑出来的数字生成，数字本身来自上面的运行记录。
+            </p>
+          ) : null}
+        </div>
+      ) : (
       <div className="rounded-xl border border-chart-1/30 bg-chart-1/10 px-5 py-4">
         <p className="text-sm leading-relaxed">
           {rows.length} 个被测模型、{judges.length} 把尺子，同一份配置（
@@ -213,6 +224,7 @@ export function ModelComparisonSection() {
           ) : null}
         </p>
       </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
         <div className="min-w-0 rounded-xl border bg-card px-5 py-4 shadow-sm">

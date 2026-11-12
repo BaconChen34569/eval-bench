@@ -20,6 +20,7 @@ import {
   formatNumber,
   formatPercent,
   multiProject,
+  narrative,
   type QuestionCategory,
 } from "@/data/report";
 
@@ -72,8 +73,23 @@ export function ProjectComparisonSection() {
   const totalQuestions = rows.reduce((sum, row) => sum + row.questions, 0);
   const totalCost = rows.reduce((sum, row) => sum + row.totalCost, 0);
 
+  // 样本内这个偏差必须留着：AI 评语也好、模板也好，
+  // 都不能把「配置是在 Flask 上调出来的」这件事说漏了。
+  const biasNote = `需要交代一个偏差：七轮迭代都是在 ${tunedProject} 上调的，所以它这一行属于"样本内"；其余 ${rows.length - 1} 个项目的配置一行没在它们身上改过，才是泛化检验。`;
+
   return (
     <div className="flex flex-col gap-6">
+      {narrative.multiProject ? (
+        <div className="rounded-xl border border-chart-2/30 bg-chart-2/10 px-5 py-4">
+          <p className="text-sm leading-relaxed">{narrative.multiProject}</p>
+          {narrative.model ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              这段评语由 {narrative.model} 照着这次跑出来的数字生成，数字本身来自上面的运行记录。
+            </p>
+          ) : null}
+          <p className="mt-2 text-sm leading-relaxed">{biasNote}</p>
+        </div>
+      ) : (
       <div className="rounded-xl border border-chart-2/30 bg-chart-2/10 px-5 py-4">
         <p className="text-sm leading-relaxed">
           四个项目共用同一份配置（{multiProject.chunking.label}，top-
@@ -92,9 +108,10 @@ export function ProjectComparisonSection() {
           最低的是 {worst.label}（{formatPercent(worst.successRate)}）。
           这条落差本身说明尺子有区分度——它不是对所有答案都给同一个分。
           <br />
-          需要交代一个偏差：七轮迭代都是在 {tunedProject} 上调的，所以它这一行属于"样本内"；其余 {rows.length - 1} 个项目的配置一行没在它们身上改过，才是泛化检验。
+          {biasNote}
         </p>
       </div>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <CardShell

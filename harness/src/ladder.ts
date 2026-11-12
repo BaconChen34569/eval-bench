@@ -6,7 +6,7 @@ import {
   search,
   toCitations,
 } from "./retrieval.ts";
-import { runEvaluation } from "./runner.ts";
+import { runEvaluation, scopeQuestions } from "./runner.ts";
 import type { LlmConfig } from "./llm.ts";
 import { CODE_VERSION } from "./schema.ts";
 import type {
@@ -324,16 +324,24 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
   const judgeLlm = options.judgeLlm ?? options.llm;
   const models = { agent: options.llm.model, judge: judgeLlm.model };
 
+  // 只跑前 N 题时，检索层也只量这 N 题。
+  // 不然检索层量的是全部题、生成层跑的是前 N 题，
+  // 两层的分母不一样，「检索涨了生成跟上了吗」这条因果链就接不上了。
+  const dataset: EvalDataset = {
+    ...options.dataset,
+    questions: scopeQuestions(options.dataset, options.limit),
+  };
+
   for (const [position, step] of LADDER.entries()) {
     const measurement = measureRetrieval(
       files,
-      options.dataset,
+      dataset,
       step.chunking,
       step.retrieval,
     );
 
     const reusable = options.reuseRuns?.find((run) =>
-      reusableForStep(run, step, options.dataset.questions.length, models),
+      reusableForStep(run, step, dataset.questions.length, models),
     );
     let run: EvalRun;
 

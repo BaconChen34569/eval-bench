@@ -77,6 +77,21 @@ scripts/mock-llm.mjs     测试夹具：一个假的 OpenAI 兼容服务
 定位错误和漏要点要修的地方完全不同：前者换检索方式，后者才轮到改提示词。
 所以分类顺序是先判编造，再判定位，最后才归为漏要点。
 
+## 评语是谁写的
+
+站点上每段解读有两个来源：
+
+- **规则模板**：直接拿报告里的数字拼句子，数字永远对得上，但话比较死。
+- **AI 评语**：让模型照着这次跑出来的数字讲一段话。模型只负责措辞，
+  所有数字都是先由 harness 算好再交给它的——它不负责算。
+
+`narrate` 命令和本地工作台的生成层跑完都会自动写 AI 评语（`report.narrative`）。
+写出来的那段话会被**重新核对一遍**：提到的每个百分点、每个金额都要和报告对得上，
+「最贵的一轮」「性价比最高的一轮」这类结论也要和事实一致；对不上就重写，
+重写还不行就丢掉这段，站点回落到规则模板。
+
+所以站上不会出现「模型自己心算出来的数字」。核对不过的评语宁可没有。
+
 ## 命令
 
 下面的命令按 bash 写成（用 `\` 续行）。**必须先 `cd harness`**：`.env` 和默认输出路径
@@ -119,6 +134,10 @@ node --experimental-strip-types src/cli.ts run \
 # 改了失败归因规则后，重算已有报告的归因（不重新调用模型）
 node --experimental-strip-types scripts/reclassify.ts \
   out/report.json ../corpus/repos/flask-3.1.3
+
+# 给已有报告补一段 AI 评语：照着这次跑出来的数字写，不重跑评测
+node --experimental-strip-types src/cli.ts narrate \
+  out/report.json --out out/report.json
 
 # 起本地工作台：打开就是填数据和看结果，不用先读一遍介绍
 node --experimental-strip-types src/cli.ts serve --port 8787

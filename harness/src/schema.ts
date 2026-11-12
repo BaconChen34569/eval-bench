@@ -532,6 +532,25 @@ export interface ModelComparison {
   note: string;
 }
 
+/**
+ * AI 写的评语。
+ *
+ * 数字全部来自这次跑出来的结果，模型只负责把它们讲成人话；
+ * 没有 AI 评语时站点回落到规则模板，两边都不会空着。
+ */
+export interface ReportNarrative {
+  /** 迭代阶梯：每一轮改了什么、代价是多少 */
+  ladder?: string;
+  /** 切分策略横向对比 */
+  strategies?: string;
+  /** 多模型对比 */
+  modelComparison?: string;
+  /** 多项目对比 */
+  multiProject?: string;
+  /** 写这些评语的模型 id，站点要标出来 */
+  model?: string;
+}
+
 /** 一个数据集上的多次运行，用于横向对比 */
 export interface ExperimentReport {
   datasetId: string;
@@ -556,4 +575,6 @@ export interface ExperimentReport {
   modelComparison?: ModelComparison;
   /** 多项目对比，站点用它展示这把尺子换个仓库还灵不灵 */
   multiProject?: MultiProjectComparison;
+  /** AI 写的评语，站点优先用它，没有才用规则模板 */
+  narrative?: ReportNarrative;
 }
