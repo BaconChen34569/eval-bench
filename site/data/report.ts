@@ -499,6 +499,18 @@ export let narrative: ReportNarrative = {};
 /** 生成层运行记录，按策略顺序排好。 */
 export let runs: EvalRun[] = [];
 
+/**
+ * 所有带生成层结果的运行记录。
+ *
+ * 横向对比的每种策略是一种配置，迭代阶梯的每一轮也是一种配置——
+ * 两边都是「跑过一次、留下模型回答和 judge 打分」的运行记录，
+ * 逐题视图要能同时看到它们，所以放在一处。
+ */
+export let generationRuns: EvalRun[] = [];
+
+/** 生成层里成功率最高的一次运行，两类运行记录一起算。 */
+export let bestGenerationRun: EvalRun | undefined;
+
 /** 检索层策略指标，按策略顺序排好。 */
 export let strategies: StrategyMetrics[] = [];
 
@@ -544,6 +556,18 @@ export function setReport(next: ExperimentReport): void {
       STRATEGY_ORDER.indexOf(b.strategy.id),
   );
 
+  // 横向对比的策略和阶梯的轮次都是「跑过一次的配置」，
+  // 逐题视图要能挨个点开看，所以合成一份。
+  generationRuns = [
+    ...new Map(
+      [...runs, ...ladderRuns].map((run) => [run.runId, run]),
+    ).values(),
+  ];
+
+  bestGenerationRun = [...generationRuns].sort(
+    (a, b) => b.summary.successRate - a.summary.successRate,
+  )[0];
+
   const map = new Map<string, RetrievalCase>();
   for (const strategy of strategies) {
     for (const item of strategy.cases) {
@@ -581,6 +605,18 @@ export function ladderRun(stepId: string): EvalRun | undefined {
   const step = ladder.find((item) => item.id === stepId);
   if (!step) return undefined;
   return ladderRuns.find((run) => run.runId === step.runId);
+}
+
+/**
+ * 一条运行记录在逐题视图里叫什么。
+ *
+ * 阶梯的某一轮可能和横向策略用同一种切分（都是「固定窗口 800 字符」），
+ * 光看切分名字分不出是哪一轮，所以阶梯的轮次前面带上轮次号。
+ */
+export function runLabel(run: EvalRun): string {
+  return run.origin === "ladder" && run.ladderStepId
+    ? `${run.ladderStepId} · ${run.chunking.label}`
+    : run.chunking.label;
 }
 
 export const CATEGORY_LABEL: Record<QuestionCategory, string> = {

@@ -13,13 +13,14 @@ import {
   CATEGORY_LABEL,
   DIFFICULTY_LABEL,
   FAILURE_LABEL,
-  bestRun,
+  bestGenerationRun,
   citationHits,
   formatNumber,
   formatPercent,
+  generationRuns,
   questions,
   report,
-  runs,
+  runLabel,
   strategies,
   type QuestionCategory,
 } from "@/data/report";
@@ -39,7 +40,7 @@ export function QuestionExplorer() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<QuestionCategory | "all">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [runId, setRunId] = useState(bestRun?.runId ?? "");
+  const [runId, setRunId] = useState(bestGenerationRun?.runId ?? "");
   const [expandedAnswer, setExpandedAnswer] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
@@ -63,6 +64,16 @@ export function QuestionExplorer() {
   const currentPage = Math.min(page, pageCount - 1);
   const pageStart = currentPage * PAGE_SIZE;
   const pageQuestions = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+  /**
+   * 当前正在看的那次运行。
+   *
+   * 选中的运行可能已经不在报告里了（换了跑法、换了报告），
+   * 这时就退回第一条，而不是让回答区空着。
+   */
+  const activeRunId = generationRuns.some((item) => item.runId === runId)
+    ? runId
+    : (generationRuns[0]?.runId ?? "");
 
   return (
     <div className="flex flex-col gap-6">
@@ -245,7 +256,7 @@ export function QuestionExplorer() {
                           </tr>
                         </thead>
                         <tbody className="tabular-nums">
-                          {runs.map((run) => {
+                          {generationRuns.map((run) => {
                             const entry = run.cases.find(
                               (candidate) =>
                                 candidate.questionId === item.questionId,
@@ -253,7 +264,7 @@ export function QuestionExplorer() {
                             if (!entry) return null;
                             const pass =
                               entry.judgeScore >= run.summary.successThreshold;
-                            const selected = run.runId === runId;
+                            const selected = run.runId === activeRunId;
                             return (
                               <tr
                                 key={run.runId}
@@ -262,7 +273,7 @@ export function QuestionExplorer() {
                                 }`}
                               >
                                 <td className="py-1.5 pr-3 font-sans">
-                                  {run.chunking.label}
+                                  {runLabel(run)}
                                 </td>
                                 <td
                                   className={`py-1.5 pr-3 text-right font-mono ${
@@ -295,32 +306,34 @@ export function QuestionExplorer() {
                       生成层：模型实际回答与 judge 判语
                     </h4>
                     <div className="flex flex-wrap gap-1.5">
-                      {runs.map((run) => (
+                      {generationRuns.map((run) => (
                         <button
                           key={run.runId}
                           type="button"
                           onClick={() => setRunId(run.runId)}
                           className={`inline-flex min-h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors ${
-                            run.runId === runId
+                            run.runId === activeRunId
                               ? "border-transparent bg-foreground text-background"
                               : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
                           }`}
                         >
-                          {run.chunking.label}
+                          {runLabel(run)}
                         </button>
                       ))}
                     </div>
                   </div>
 
                   {(() => {
-                    const run = runs.find((item) => item.runId === runId);
+                    const run = generationRuns.find(
+                      (item) => item.runId === activeRunId,
+                    );
                     const found = run?.cases.find(
                       (entry) => entry.questionId === item.questionId,
                     );
                     if (!run || !found) {
                       return (
                         <p className="text-xs text-muted-foreground">
-                          这个策略下没有这道题的生成层结果。
+                          这次没有这道题的生成层结果。
                         </p>
                       );
                     }
