@@ -426,6 +426,8 @@ function formatRunTime(iso: string): string {
 
 const judgeValidation = report.judgeValidation;
 const hasJudgeValidation = judgeValidation.sampled > 0;
+/** 自检失败的题：没进一致率的分母，但得在读数里说清楚。 */
+const judgeFailed = judgeValidation.failed ?? 0;
 /** 生成层指标只有在真的跑过大模型调用时才会出现在报告里。 */
 const hasGeneration = strategies.some((item) => item.successRate !== undefined);
 const generationStrategies = strategies.filter(
@@ -961,7 +963,7 @@ export default function App() {
             <Metric
               label="judge 自检一致率"
               value={formatPercent(report.judgeValidation.agreement)}
-              hint={`Flask · ${report.judgeValidation.sampled} 题人工参考答案 · judge 均分 ${report.judgeValidation.meanJudgeScore.toFixed(2)} vs 人工 ${report.judgeValidation.meanHumanScore.toFixed(2)}`}
+              hint={`Flask · ${report.judgeValidation.sampled} 题人工参考答案${judgeFailed ? `（另 ${judgeFailed} 题自检失败，没进分母）` : ""} · judge 均分 ${report.judgeValidation.meanJudgeScore.toFixed(2)} vs 人工 ${report.judgeValidation.meanHumanScore.toFixed(2)}`}
             />
             <Metric
               label="评测集"
@@ -1726,7 +1728,11 @@ export default function App() {
                 <Metric
                   label="参与校验题数"
                   value={String(judgeValidation.sampled)}
-                  hint="每题都有人工标注的参考答案"
+                  hint={
+                    judgeFailed
+                      ? `每题都有人工标注的参考答案；另有 ${judgeFailed} 题自检失败，没进分母`
+                      : "每题都有人工标注的参考答案"
+                  }
                 />
               </div>
               <Card>

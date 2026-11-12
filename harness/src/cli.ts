@@ -230,6 +230,8 @@ async function main(): Promise<void> {
     const judgeLlm = selection?.judge.config ?? null;
     let judgeValidation: JudgeValidation = {
       sampled: 0,
+      attempted: 0,
+      failed: 0,
       agreement: 0,
       meanJudgeScore: 0,
       meanHumanScore: 0,
@@ -515,6 +517,8 @@ async function main(): Promise<void> {
       costCurrency: "¥",
       judgeValidation: {
         sampled: 0,
+        attempted: 0,
+        failed: 0,
         agreement: 0,
         meanJudgeScore: 0,
         meanHumanScore: 0,

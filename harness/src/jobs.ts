@@ -13,7 +13,11 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runEvaluation, scopeQuestions } from "./runner.ts";
 import { runRetrievalEval } from "./retrieval-eval.ts";
-import { validateJudge } from "./judge-validation.ts";
+import {
+  describeJudgeFailures,
+  validateJudge,
+  withFailureCount,
+} from "./judge-validation.ts";
 import { judgeCheckKey, readJudgeCheck, writeJudgeCheck } from "./judge-cache.ts";
 import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
@@ -90,6 +94,8 @@ const jobs = new Map<string, GenJob>();
 /** 空 judge 自检：没跑的时候也要有个说得清的说明。 */
 const NO_JUDGE_CHECK: JudgeValidation = {
   sampled: 0,
+  attempted: 0,
+  failed: 0,
   agreement: 0,
   meanJudgeScore: 0,
   meanHumanScore: 0,
@@ -291,7 +297,10 @@ async function runJudgeCheck(
     job.log.push(
       `  一致率 ${(cached.result.summary.agreement * 100).toFixed(1)}%（${cached.result.summary.sampled} 题）`,
     );
-    return cached.result.summary;
+    // 复用的结果里也可能藏着失败题，一样要说出来
+    const failure = describeJudgeFailures(cached.result.details ?? []);
+    if (failure) job.log.push(`  ${failure}`);
+    return withFailureCount(cached.result.summary, cached.result.details ?? []);
   }
 
   job.log.push(
@@ -314,6 +323,10 @@ async function runJudgeCheck(
       ? `  一致率 ${(validation.summary.agreement * 100).toFixed(1)}%（${validation.summary.sampled} 题）`
       : `  ${validation.summary.note}`,
   );
+  // 自检失败的题不进一致率的分母，但得让人看见——
+  // 「100%（3 题）」和「6 题里成功 3 题」不是一回事。
+  const failure = describeJudgeFailures(validation.details);
+  if (failure) job.log.push(`  ${failure}`);
   return validation.summary;
 }
 

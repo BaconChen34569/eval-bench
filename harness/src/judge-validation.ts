@@ -1,6 +1,10 @@
 import { judgeAnswer, scoresAgree } from "./judge.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
-import type { EvalDataset, EvalQuestion, JudgeValidation } from "./schema.ts";
+import type {
+  EvalDataset,
+  EvalQuestion,
+  JudgeValidation,
+} from "./schema.ts";
 import type { LlmConfig } from "./llm.ts";
 
 /**
@@ -22,6 +26,62 @@ export interface JudgeValidationDetail {
 export interface JudgeValidationResult {
   summary: JudgeValidation;
   details: JudgeValidationDetail[];
+}
+
+/**
+ * 自检失败的题。
+ *
+ * judge 正常打分是 1-5 分，所以分数是 0 只可能是这次请求没成功
+ * （超时、限流、返回解析不了）。这些题不能算进一致率的分母——
+ * 那是「没测出来」，不是「测出来不一致」。
+ *
+ * 但也不能就这么从统计里消失：一致率 100%（3 题）看着比 6 题里成功 3 题
+ * 还要强，失败的那些题得让人看见。
+ */
+export function judgeFailures(
+  details: JudgeValidationDetail[],
+): JudgeValidationDetail[] {
+  return details.filter((item) => item.judgeScore <= 0);
+}
+
+/** 把失败的题压成一行人话，给工作台的日志用。 */
+export function describeJudgeFailures(
+  details: JudgeValidationDetail[],
+): string | null {
+  const failed = judgeFailures(details);
+  if (!failed.length) return null;
+  const ids = failed.map((item) => item.questionId);
+  const shown =
+    ids.length > 8 ? `${ids.slice(0, 8).join("、")} 等 ${ids.length} 题` : ids.join("、");
+  // 原因只留一句话：错误信息后面常跟着一大段响应体，日志里没人要看
+  const reasons = [
+    ...new Set(
+      failed.map((item) =>
+        item.reason.split("\n")[0].split(": ")[0].trim().slice(0, 40),
+      ),
+    ),
+  ];
+  return (
+    `自检失败 ${failed.length} 题，没进一致率的分母` +
+    `（${shown}：${reasons.join("；")}）`
+  );
+}
+
+/**
+ * 给自检结果补上失败计数。
+ *
+ * 早先存下来的缓存里没有这两个字段，从逐题明细里补出来，
+ * 老报告重新用起来时失败题也不会被吞掉。
+ */
+export function withFailureCount(
+  summary: JudgeValidation,
+  details: JudgeValidationDetail[],
+): JudgeValidation {
+  return {
+    ...summary,
+    attempted: summary.attempted ?? details.length,
+    failed: summary.failed ?? judgeFailures(details).length,
+  };
 }
 
 export async function validateJudge(
@@ -104,9 +164,12 @@ export async function validateJudge(
   );
 
   const scored = details.filter((item) => item.judgeScore > 0);
+  const failed = judgeFailures(details);
   const total = scored.length || 1;
   const summary: JudgeValidation = {
     sampled: scored.length,
+    attempted: details.length,
+    failed: failed.length,
     agreement:
       scored.filter((item) => item.agrees).length / total,
     meanJudgeScore:

@@ -76,7 +76,17 @@ export interface StrategyMetrics {
 
 /** judge 自检：judge 给人工参考答案打分，和人工评分比较。 */
 export interface JudgeValidation {
+  /** 参与统计的题数——一致率的分母，只算 judge 成功打上分的那些 */
   sampled: number;
+  /** 实际发起自检的题数 */
+  attempted?: number;
+  /**
+   * 自检失败的题数。
+   *
+   * 这些题 judge 没打上分，从一致率的分母里剔掉了。
+   * 不写出来的话，一致率会看着比实际强。
+   */
+  failed?: number;
   agreement: number;
   meanJudgeScore: number;
   meanHumanScore: number;

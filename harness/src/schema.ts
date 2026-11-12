@@ -335,8 +335,18 @@ export interface StrategyMetrics {
 
 /** judge 自检：让 judge 给人工写的参考答案打分，再和人工自己给的分数比较。 */
 export interface JudgeValidation {
-  /** 参与校验的题数 */
+  /** 参与统计的题数——一致率的分母，只算 judge 成功打上分的那些 */
   sampled: number;
+  /** 实际发起自检的题数（带人工评分的那些） */
+  attempted?: number;
+  /**
+   * 自检失败的题数。
+   *
+   * 这些题 judge 没打上分（超时、限流、返回解析不了），
+   * 既不贡献一致也不贡献不一致，从分母里剔掉了。
+   * 不把它写出来，一致率就会看着比实际强。
+   */
+  failed?: number;
   /** judge 与人工相差不超过 1 分即视为一致 */
   agreement: number;
   /** judge 给参考答案的平均分 */
