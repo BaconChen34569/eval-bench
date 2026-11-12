@@ -587,8 +587,8 @@ export function GenPanel({
               ))}
             </NativeSelect>
             <span className="text-[11px] text-muted-foreground">
-              慢在等模型回话，并发几路就快几倍。服务商可能限流，
-              出现「调用失败」就调低一档。
+              慢在等模型回话，并发几路就快几倍。撞上服务商限流会自动降并发
+              重跑，不用手动调低。
             </span>
           </label>
           {mode === "compare" ? (

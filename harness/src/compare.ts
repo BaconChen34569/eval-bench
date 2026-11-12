@@ -46,6 +46,9 @@ export interface CompareOptions {
   limit?: number;
   /** 同时发几次模型请求。1 = 一题一题来。 */
   concurrency?: number;
+  /** 撞上服务商限流时把这一题重跑一遍 */
+  retryRateLimited?: boolean;
+  onRateLimited?: (questionId: string, attempt: number) => void;
   onProgress?: (message: string) => void;
   /**
    * 每一题跑完时的细账。
@@ -254,6 +257,8 @@ export async function runComparison(
         profile: agent.id,
         profileLabel: agent.label,
         concurrency: options.concurrency,
+        retryRateLimited: options.retryRateLimited,
+        onRateLimited: options.onRateLimited,
         onProgress: (done, total, message) => {
           options.onQuestionProgress?.({
             agent,
@@ -279,6 +284,7 @@ export async function runComparison(
         judgeLlm: judge.config,
         successThreshold,
         concurrency: options.concurrency,
+        retryRateLimited: options.retryRateLimited,
         onProgress: (done, total, message) => {
           options.onQuestionProgress?.({
             agent,

@@ -233,6 +233,13 @@ export interface CaseResult {
   judgeCost?: number;
   /** 失败时的归因分类，供失败案例面板聚合 */
   failureKind?: "wrong-location" | "missing-detail" | "hallucination" | "timeout";
+  /**
+   * 失败时的原始报文。
+   *
+   * 判语写给人看（限流就说限流），原始报文留在这里给排查用，
+   * 不然出了事只看得见一句「调用失败」，不知道是限流还是超时。
+   */
+  errorDetail?: string;
 }
 
 export interface RunSummary {

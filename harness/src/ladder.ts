@@ -296,6 +296,9 @@ export interface LadderOptions {
    * 所以并发只影响快慢，不影响这一轮的分数。
    */
   concurrency?: number;
+  /** 撞上服务商限流时把这一题重跑一遍 */
+  retryRateLimited?: boolean;
+  onRateLimited?: (questionId: string, attempt: number) => void;
   onProgress?: (step: LadderConfig, done: number, total: number, message: string) => void;
   /**
    * 每一题跑完时的细账。
@@ -374,6 +377,8 @@ export async function runLadder(options: LadderOptions): Promise<LadderResult> {
         promptVersion: step.promptVersion,
         limit: options.limit,
         concurrency: options.concurrency,
+        retryRateLimited: options.retryRateLimited,
+        onRateLimited: options.onRateLimited,
         onProgress: (done, total, message) => {
           options.onQuestionProgress?.({ step, done, total, reused: false });
           options.onProgress?.(

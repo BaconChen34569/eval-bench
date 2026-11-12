@@ -4,6 +4,7 @@
  */
 
 import { priceFromEnv, type PriceSource } from "./pricing.ts";
+import type { RateLimitGovernor } from "./rate-limit.ts";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -50,6 +51,14 @@ export interface LlmConfig {
   temperature?: number;
   /** 单次输出上限。不设则由服务端按模型默认决定。 */
   maxTokens?: number;
+  /**
+   * 限流闸门。
+   *
+   * 只有本地工作台那条路会挂上：那边允许把并发调高，
+   * 撞上服务商额度时靠它自动降并发，不至于让整轮评测失败。
+   * 不挂就是每次请求各走各的，行为和从前完全一样。
+   */
+  governor?: RateLimitGovernor;
 }
 
 export class LlmError extends Error {
@@ -104,6 +113,20 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+/**
+ * 等待时加一点抖动。
+ *
+ * 并发跑的时候，几道题会在同一刻撞上 429，
+ * 如果都按同一张时间表醒来，它们会一起再撞一次。
+ * 加一点随机偏移，重试就散开了。
+ *
+ * 只在挂了闸门时用：那边才会并发。命令行一次只跑一题，
+ * 等待时刻和从前一模一样。
+ */
+function jitter(ms: number): number {
+  return Math.round(ms * (0.85 + Math.random() * 0.3));
+}
+
 export async function chat(
   config: LlmConfig,
   messages: ChatMessage[],
@@ -112,21 +135,33 @@ export async function chat(
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_RATE_LIMIT_ATTEMPTS; attempt += 1) {
+    const governor = config.governor;
+    if (governor) await governor.acquire();
     try {
       const result = await chatOnce(config, messages);
+      governor?.onSuccess();
       return { ...result, latencyMs: Date.now() - started };
     } catch (error) {
       lastError = error;
       const retryable = error instanceof LlmError && error.retryable === true;
       const limited = error instanceof LlmError && error.status === 429;
+      if (limited) governor?.onRateLimited();
       const maxAttempts = limited ? MAX_RATE_LIMIT_ATTEMPTS : MAX_ATTEMPTS;
       if (attempt >= maxAttempts || !retryable) throw error;
-      const wait = limited
-        ? RATE_LIMIT_WAIT_MS[
-            Math.min(attempt - 1, RATE_LIMIT_WAIT_MS.length - 1)
-          ]
+      // 有闸门时，冷静由闸门统一管：下一次取名额就会等到冷却结束。
+      const baseWait = limited
+        ? governor
+          ? 0
+          : RATE_LIMIT_WAIT_MS[
+              Math.min(attempt - 1, RATE_LIMIT_WAIT_MS.length - 1)
+            ]
         : attempt * 1000;
-      await new Promise((resolve) => setTimeout(resolve, wait));
+      const wait = governor ? jitter(baseWait) : baseWait;
+      if (wait > 0) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    } finally {
+      governor?.release();
     }
   }
 

@@ -23,6 +23,7 @@ import { LADDER, runLadder } from "./ladder.ts";
 import { runComparison } from "./compare.ts";
 import { generateNarrative } from "./narrative.ts";
 import { readyProfiles, resolveProfile, type ReadyProfile } from "./profiles.ts";
+import { RateLimitGovernor } from "./rate-limit.ts";
 import { DEFAULT_RETRIEVAL, STRATEGY_LIST } from "./strategies.ts";
 import { CODE_VERSION, type EvalDataset, type EvalRun, type ExperimentReport, type JudgeValidation } from "./schema.ts";
 
@@ -210,6 +211,20 @@ function pickProfiles(
   return ids.map((id) => resolveProfile(env, id));
 }
 
+/**
+ * 给档案挂上限流闸门。
+ *
+ * 用户在工作台把并发调高时，撞上服务商额度是常事。
+ * 闸门会自己把并发降下来，被限流的题还会重跑，
+ * 用户看到的是一份跑完的结果，而不是满屏 429 报文。
+ */
+function attachGovernor(
+  profile: ReadyProfile,
+  governor: RateLimitGovernor,
+): ReadyProfile {
+  return { ...profile, config: { ...profile.config, governor } };
+}
+
 /** 这次实际要跑多少题：只跑前 N 题时就是 N。 */
 function questionCount(options: GenJobOptions): number {
   const all = options.dataset.questions.length;
@@ -358,10 +373,14 @@ async function runSingle(
   options: GenJobOptions,
   env: Record<string, string | undefined>,
   outDir: string,
+  governor: RateLimitGovernor,
 ): Promise<ExperimentReport> {
-  const agent = resolveProfile(env, options.agentProfile);
+  const agent = attachGovernor(
+    resolveProfile(env, options.agentProfile),
+    governor,
+  );
   const judge = options.judgeProfile
-    ? resolveProfile(env, options.judgeProfile)
+    ? attachGovernor(resolveProfile(env, options.judgeProfile), governor)
     : agent;
   const questions = questionCount(options);
   const judged = judgeCount(options);
@@ -438,6 +457,9 @@ async function runSingle(
       runId: `${strategy.id}-${Date.now()}`,
       limit: options.limit,
       concurrency: options.concurrency,
+      retryRateLimited: true,
+      onRateLimited: (questionId, attempt) =>
+        job.log.push(`  ${questionId} 撞上限流，降并发后重跑（第 ${attempt} 次）`),
       profile: agent.id,
       profileLabel: agent.label,
       onProgress: (done, total, message) => {
@@ -471,10 +493,14 @@ async function runLadderJob(
   options: GenJobOptions,
   env: Record<string, string | undefined>,
   outDir: string,
+  governor: RateLimitGovernor,
 ): Promise<ExperimentReport> {
-  const agent = resolveProfile(env, options.agentProfile);
+  const agent = attachGovernor(
+    resolveProfile(env, options.agentProfile),
+    governor,
+  );
   const judge = options.judgeProfile
-    ? resolveProfile(env, options.judgeProfile)
+    ? attachGovernor(resolveProfile(env, options.judgeProfile), governor)
     : agent;
   const questions = questionCount(options);
   const judged = judgeCount(options);
@@ -542,6 +568,9 @@ async function runLadderJob(
     reuseRuns: reuse,
     limit: options.limit,
     concurrency: options.concurrency,
+    retryRateLimited: true,
+    onRateLimited: (questionId, attempt) =>
+      job.log.push(`  ${questionId} 撞上限流，降并发后重跑（第 ${attempt} 次）`),
     onProgress: (step, done, total, message) =>
       job.log.push(`  ${step.id} (${done}/${total}) ${message}`),
     onQuestionProgress: (progress) => {
@@ -588,6 +617,7 @@ async function runCompareJob(
   options: GenJobOptions,
   env: Record<string, string | undefined>,
   outDir: string,
+  governor: RateLimitGovernor,
 ): Promise<ExperimentReport> {
   const agentIds = options.agentProfiles ?? [];
   const judgeIds = options.judgeProfiles ?? [];
@@ -598,8 +628,12 @@ async function runCompareJob(
     throw new Error("至少要选一把尺子");
   }
 
-  const agents = pickProfiles(env, agentIds);
-  const judges = pickProfiles(env, judgeIds);
+  const agents = pickProfiles(env, agentIds).map((item) =>
+    attachGovernor(item, governor),
+  );
+  const judges = pickProfiles(env, judgeIds).map((item) =>
+    attachGovernor(item, governor),
+  );
   const step =
     LADDER.find((item) => item.id === options.stepId) ?? LADDER[LADDER.length - 1];
   const questions = questionCount(options);
@@ -646,6 +680,9 @@ async function runCompareJob(
     reuseRuns: reuse,
     limit: options.limit,
     concurrency: options.concurrency,
+    retryRateLimited: true,
+    onRateLimited: (questionId, attempt) =>
+      job.log.push(`  ${questionId} 撞上限流，降并发后重跑（第 ${attempt} 次）`),
     onProgress: (message) => job.log.push(`  ${message}`),
     onQuestionProgress: (info) => {
       tracker.enter(
@@ -716,14 +753,30 @@ export function startGenJob(
   };
   jobs.set(job.id, job);
 
+  /**
+   * 这次任务的限流闸门。
+   *
+   * 用户在工作台把并发调高，撞上服务商额度是常事。
+   * 闸门收到 429 就把并发降下来，被限流的题还会重跑，
+   * 所以用户看到的是一份跑完的结果，而不是满屏 429 报文。
+   */
+  const governor = new RateLimitGovernor(options.concurrency ?? 1);
+  governor.onEvent = (event) => {
+    job.log.push(
+      event.kind === "limited"
+        ? `  服务商限流了，并发从 ${event.from} 降到 ${event.to}，等 ${Math.round(event.waitMs / 1000)} 秒再继续`
+        : `  限流过去了，并发恢复到 ${event.to} 路`,
+    );
+  };
+
   const runner = async (): Promise<void> => {
     try {
       const report =
         options.mode === "ladder"
-          ? await runLadderJob(job, options, env, outDir)
+          ? await runLadderJob(job, options, env, outDir, governor)
           : options.mode === "compare"
-            ? await runCompareJob(job, options, env, outDir)
-            : await runSingle(job, options, env, outDir);
+            ? await runCompareJob(job, options, env, outDir, governor)
+            : await runSingle(job, options, env, outDir, governor);
 
       // 评语照着这次跑出来的数字写，不重跑评测，只多几次模型请求。
       job.progress = { ...job.progress, stage: "AI 写评语" };

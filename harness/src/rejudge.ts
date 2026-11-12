@@ -6,7 +6,7 @@ import { classifyFailure, fileLineCounts } from "./failure.ts";
 import { parseAnswerCitations } from "./agent.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
 import { summarize } from "./runner.ts";
-import { estimateCost, type LlmConfig } from "./llm.ts";
+import { estimateCost, LlmError, type LlmConfig } from "./llm.ts";
 import type {
   CaseResult,
   EvalDataset,
@@ -25,6 +25,8 @@ export interface RejudgeOptions {
   successThreshold: number;
   /** 同时换几道题的判。1 = 一题一题重打。 */
   concurrency?: number;
+  /** 撞上服务商限流时把这一题重打一遍 */
+  retryRateLimited?: boolean;
   onProgress?: (done: number, total: number, message: string) => void;
 }
 
@@ -70,14 +72,28 @@ export async function rejudgeRun(options: RejudgeOptions): Promise<EvalRun> {
       .join("\n\n");
 
     let judged;
-    try {
-      judged = await judgeAnswer(judgeLlm, question, original.answer, context);
-    } catch (error) {
-      // 换 judge 之后这道题打不了分，不改原来的分数，也不改失败归因
-      return {
-        result: original,
-        message: `${original.questionId} 换 judge 失败：${error instanceof Error ? error.message : String(error)}`,
-      };
+    const maxAttempts = options.retryRateLimited ? 3 : 1;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        judged = await judgeAnswer(
+          judgeLlm,
+          question,
+          original.answer,
+          context,
+        );
+        break;
+      } catch (error) {
+        const limited = error instanceof LlmError && error.status === 429;
+        // 限流是额度问题，不是这一题的问题：降过并发再打一次。
+        if (limited && attempt < maxAttempts) continue;
+        // 换 judge 之后这道题打不了分，不改原来的分数，也不改失败归因
+        return {
+          result: original,
+          message: limited
+            ? `${original.questionId} 换 judge 失败：服务商限流，没打上分`
+            : `${original.questionId} 换 judge 失败：${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
     }
 
     // agent 那次调用的花费不变，只有打分这笔账换了人。

@@ -7,7 +7,7 @@ import { answerQuestion, parseAnswerCitations } from "./agent.ts";
 import { classifyFailure, fileLineCounts } from "./failure.ts";
 import { mapWithConcurrency } from "./concurrency.ts";
 import { judgeAnswer } from "./judge.ts";
-import { estimateCost, type LlmConfig } from "./llm.ts";
+import { estimateCost, LlmError, type LlmConfig } from "./llm.ts";
 import {
   CODE_VERSION,
   type CaseResult,
@@ -52,6 +52,19 @@ export interface RunOptions {
    * 代价是服务商可能限流。命令行默认 1，本地工作台默认更高。
    */
   concurrency?: number;
+  /**
+   * 撞上服务商限流时，把这一题重跑一遍。
+   *
+   * 命令行默认关掉：那边一次只跑一题，限流很少发生，
+   * 而且重跑会让这一轮的数字跟之前跑出来的对不上。
+   * 本地工作台会打开：那边允许把并发调高，撞额度是常事，
+   * 宁可慢一点把这一题跑出来，也别在报告里留一个失败。
+   */
+  retryRateLimited?: boolean;
+  /** 撞上限流时最多重跑几次 */
+  maxRateLimitRetries?: number;
+  /** 某一题因限流要重跑时告诉外面，页面用它说明在等什么 */
+  onRateLimited?: (questionId: string, attempt: number) => void;
   onProgress?: (done: number, total: number, message: string) => void;
 }
 
@@ -111,84 +124,102 @@ export async function runEvaluation(options: RunOptions): Promise<EvalRun> {
     const chunksForPrompt = hits.map((hit) => hit.chunk);
     const fallbackCitations = toCitations(hits);
 
-    try {
-      const answer = await answerQuestion(
-        llm,
-        question.question,
-        chunksForPrompt,
-        fallbackCitations,
-        promptVersion,
-      );
-      const judged = await judgeAnswer(
-        judgeLlm,
-        question,
-        answer.answer,
-        chunksForPrompt
-          .map(
-            (chunk) =>
-              `### ${chunk.file}:${chunk.startLine}-${chunk.endLine}\n${chunk.text}`,
-          )
-          .join("\n\n"),
-      );
+    const maxAttempts = options.retryRateLimited
+      ? (options.maxRateLimitRetries ?? 2) + 1
+      : 1;
 
-      const recall = evidenceRecall(answer.citations, question.reference.evidence);
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        const answer = await answerQuestion(
+          llm,
+          question.question,
+          chunksForPrompt,
+          fallbackCitations,
+          promptVersion,
+        );
+        const judged = await judgeAnswer(
+          judgeLlm,
+          question,
+          answer.answer,
+          chunksForPrompt
+            .map(
+              (chunk) =>
+                `### ${chunk.file}:${chunk.startLine}-${chunk.endLine}\n${chunk.text}`,
+            )
+            .join("\n\n"),
+        );
 
-      // agent 和 judge 分别算钱：多模型对比里两家单价不一样，
-      // 混在一起就看不出「贵在哪」。
-      const agentCost = estimateCost(answer.tokens, llm.pricePerMillion);
-      const judgeCost = estimateCost(judged.tokens, judgeLlm.pricePerMillion);
+        const recall = evidenceRecall(answer.citations, question.reference.evidence);
 
-      return {
-        questionId: question.id,
-        category: question.category,
-        answer: answer.answer,
-        citations: answer.citations,
-        judgeScore: judged.score,
-        judgeReason: judged.reason,
-        evidenceRecall: recall,
-        latencyMs: answer.latencyMs,
-        tokens: {
-          prompt: answer.tokens.prompt,
-          completion: answer.tokens.completion,
-          cacheHit: answer.tokens.cacheHit,
-          cacheMiss: answer.tokens.cacheMiss,
-          judgePrompt: judged.tokens.prompt,
-          judgeCompletion: judged.tokens.completion,
-        },
-        cost: agentCost + judgeCost,
-        judgeCost,
-        failureKind: classifyFailure(
-          {
-            answerCitations: parseAnswerCitations(answer.answer),
-            evidenceRecall: recall,
-            judgeScore: judged.score,
-            successThreshold,
+        // agent 和 judge 分别算钱：多模型对比里两家单价不一样，
+        // 混在一起就看不出「贵在哪」。
+        const agentCost = estimateCost(answer.tokens, llm.pricePerMillion);
+        const judgeCost = estimateCost(judged.tokens, judgeLlm.pricePerMillion);
+
+        return {
+          questionId: question.id,
+          category: question.category,
+          answer: answer.answer,
+          citations: answer.citations,
+          judgeScore: judged.score,
+          judgeReason: judged.reason,
+          evidenceRecall: recall,
+          latencyMs: answer.latencyMs,
+          tokens: {
+            prompt: answer.tokens.prompt,
+            completion: answer.tokens.completion,
+            cacheHit: answer.tokens.cacheHit,
+            cacheMiss: answer.tokens.cacheMiss,
+            judgePrompt: judged.tokens.prompt,
+            judgeCompletion: judged.tokens.completion,
           },
-          lineCounts,
-        ),
-      };
-    } catch (error) {
-      return {
-        questionId: question.id,
-        category: question.category,
-        answer: "",
-        citations: fallbackCitations,
-        judgeScore: 1,
-        judgeReason: error instanceof Error ? error.message : String(error),
-        evidenceRecall: 0,
-        latencyMs: 0,
-        tokens: {
-          prompt: 0,
-          completion: 0,
-          cacheHit: 0,
-          cacheMiss: 0,
-          judgePrompt: 0,
-          judgeCompletion: 0,
-        },
-        cost: 0,
-        judgeCost: 0,
-        failureKind: "timeout",
-      };
+          cost: agentCost + judgeCost,
+          judgeCost,
+          failureKind: classifyFailure(
+            {
+              answerCitations: parseAnswerCitations(answer.answer),
+              evidenceRecall: recall,
+              judgeScore: judged.score,
+              successThreshold,
+            },
+            lineCounts,
+          ),
+        };
+      } catch (error) {
+        const limited = error instanceof LlmError && error.status === 429;
+        // 限流不是这一题的失败，是服务商的额度不够。
+        // 降过并发再跑一遍，跑成了就当没发生过。
+        if (limited && attempt < maxAttempts) {
+          options.onRateLimited?.(question.id, attempt);
+          continue;
+        }
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          questionId: question.id,
+          category: question.category,
+          answer: "",
+          citations: fallbackCitations,
+          judgeScore: 1,
+          // 判语写给人看，原始报文另存一份
+          judgeReason: limited
+            ? "服务商限流，这一题没跑成（已经自动降过并发重试）"
+            : detail,
+          errorDetail: limited ? detail : undefined,
+          evidenceRecall: 0,
+          latencyMs: 0,
+          tokens: {
+            prompt: 0,
+            completion: 0,
+            cacheHit: 0,
+            cacheMiss: 0,
+            judgePrompt: 0,
+            judgeCompletion: 0,
+          },
+          cost: 0,
+          judgeCost: 0,
+          failureKind: "timeout",
+        };
+      }
     }
   };
 
