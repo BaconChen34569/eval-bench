@@ -137,10 +137,14 @@ export interface EvalRun {
   promptVersion: "base" | "cite-first";
   /** 产出这条记录的评测台代码版本 */
   codeVersion: string;
-  /** 这次运行属于横向策略对比，还是迭代阶梯的一轮 */
-  origin?: "strategy-compare" | "ladder";
+  /** 这次运行属于横向策略对比，迭代阶梯的一轮，还是多模型对比里的一家 */
+  origin?: "strategy-compare" | "ladder" | "model-compare";
   /** 属于阶梯的哪一轮 */
   ladderStepId?: string;
+  /** 被测模型所属的档案 id，多模型对比时用来区分是哪一家 */
+  profile?: string;
+  /** 档案的展示名，如「通义千问」 */
+  profileLabel?: string;
   summary: {
     successThreshold: number;
     successRate: number;
@@ -436,6 +440,12 @@ export interface ModelComparison {
   judges: { model: string; profile: string; label: string }[];
   /** 主尺子：量所有被测模型的第一把尺子 */
   primaryJudge: string;
+  /**
+   * 每个被测模型对应的运行记录，含模型的实际回答。
+   *
+   * 老报告没有这一项，那时多模型对比只剩分数，逐题检索台看不到生成层。
+   */
+  runs?: EvalRun[];
   rows: ModelComparisonRow[];
   /** 每个被测模型：主尺子与其余尺子两两一致 */
   agreements: JudgeAgreement[];
@@ -556,11 +566,18 @@ export function setReport(next: ExperimentReport): void {
       STRATEGY_ORDER.indexOf(b.strategy.id),
   );
 
-  // 横向对比的策略和阶梯的轮次都是「跑过一次的配置」，
-  // 逐题视图要能挨个点开看，所以合成一份。
+  // 横向对比的策略、阶梯的轮次、多模型对比里的每一家，
+  // 都是「跑过一次、留下模型回答和 judge 打分」的运行记录，
+  // 逐题视图要能同时看到它们，所以放在一处。
+  //
+  // 多模型的记录排在最前面：它可能复用阶梯某一轮的运行记录，
+  // runId 一样时让阶梯那条留下，名字里还带着轮次号。
   generationRuns = [
     ...new Map(
-      [...runs, ...ladderRuns].map((run) => [run.runId, run]),
+      [...(modelComparison?.runs ?? []), ...runs, ...ladderRuns].map((run) => [
+        run.runId,
+        run,
+      ]),
     ).values(),
   ];
 
@@ -612,8 +629,12 @@ export function ladderRun(stepId: string): EvalRun | undefined {
  *
  * 阶梯的某一轮可能和横向策略用同一种切分（都是「固定窗口 800 字符」），
  * 光看切分名字分不出是哪一轮，所以阶梯的轮次前面带上轮次号。
+ *
+ * 多模型对比里的每一家用的是同一份配置，切分名也一样，
+ * 所以那里报的是模型名——看的人要分清的是「谁答的」。
  */
 export function runLabel(run: EvalRun): string {
+  if (run.origin === "model-compare") return run.model;
   return run.origin === "ladder" && run.ladderStepId
     ? `${run.ladderStepId} · ${run.chunking.label}`
     : run.chunking.label;

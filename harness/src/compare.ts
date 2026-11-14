@@ -213,6 +213,8 @@ export async function runComparison(
   const primary = judges[0];
   const expectedCases = options.limit ?? dataset.questions.length;
   const rows: ModelComparisonRow[] = [];
+  /** 每个被测模型那条运行记录（含回答正文），逐题检索台要靠它展示生成层。 */
+  const agentRuns: EvalRun[] = [];
 
   for (const agent of agents) {
     options.onProgress?.(`【${agent.label}】开始`);
@@ -271,6 +273,19 @@ export async function runComparison(
         },
       });
     }
+
+    // 这一轮的回答正文要留下来。
+    //
+    // 对比结果里只留分数的话，逐题检索台里就只剩一张干巴巴的分数表，
+    // 看不出这家模型到底答了什么、错在哪。
+    // 复用的旧运行不改原件，复制一份标上来源。
+    const compareRun: EvalRun = {
+      ...baseRun,
+      origin: "model-compare",
+      profile: agent.id,
+      profileLabel: agent.label,
+    };
+    agentRuns.push(compareRun);
 
     // 其余尺子对同一批答案重新打分：答案不动，只有打分的人换人。
     const judgeRuns = new Map<string, EvalRun>();
@@ -456,6 +471,7 @@ export async function runComparison(
       label: judge.label,
     })),
     primaryJudge: primary.config.model,
+    runs: agentRuns,
     rows,
     agreements,
     agreementMatrix,

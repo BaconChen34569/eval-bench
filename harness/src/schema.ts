@@ -273,8 +273,8 @@ export interface EvalRun {
    * 阶梯的因果链就断了。
    */
   codeVersion: string;
-  /** 这条运行记录的来源：横向策略对比，还是迭代阶梯的一轮 */
-  origin?: "strategy-compare" | "ladder";
+  /** 这条运行记录的来源：横向策略对比，迭代阶梯的一轮，还是多模型对比里的一家 */
+  origin?: "strategy-compare" | "ladder" | "model-compare";
   /** 属于阶梯的哪一轮 */
   ladderStepId?: string;
   /** 被测 Agent 用的模型 id。多模型对比时不同档案会留下不同的记录。 */
@@ -539,6 +539,13 @@ export interface ModelComparison {
   judges: { model: string; profile: string; label: string }[];
   /** 主尺子：量所有被测模型的第一把尺子 */
   primaryJudge: string;
+  /**
+   * 每个被测模型对应的运行记录，含模型的实际回答。
+   *
+   * 只留分数的话，逐题检索台就看不到「这家模型到底答了什么」——
+   * 而那才是判断模型好坏的依据。
+   */
+  runs?: EvalRun[];
   rows: ModelComparisonRow[];
   /** 每个被测模型：主尺子与其余尺子两两一致 */
   agreements: JudgeAgreement[];

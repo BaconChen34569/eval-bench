@@ -18,6 +18,7 @@ import {
   formatNumber,
   formatPercent,
   generationRuns,
+  modelComparison,
   questions,
   report,
   runLabel,
@@ -74,6 +75,16 @@ export function QuestionExplorer() {
   const activeRunId = generationRuns.some((item) => item.runId === runId)
     ? runId
     : (generationRuns[0]?.runId ?? "");
+
+  /**
+   * 表里排的是模型还是策略。
+   *
+   * 多模型对比的报告里，每一行是一家模型跑同一份配置；
+   * 横向策略对比和迭代阶梯里，每一行是一种配置。
+   */
+  const rowsAreModels = generationRuns.some(
+    (run) => run.origin === "model-compare",
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -236,13 +247,17 @@ export function QuestionExplorer() {
                 <div className="flex flex-col gap-3 border-t px-4 py-4">
                   <div>
                     <h4 className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground">
-                      三种策略在这道题上的横向对比
+                      {rowsAreModels
+                        ? "各模型在这道题上的横向对比"
+                        : "三种策略在这道题上的横向对比"}
                     </h4>
                     <div className="table-scroll overflow-x-auto">
                       <table className="w-full min-w-[520px] text-xs">
                         <thead>
                           <tr className="border-b text-left text-[11px] text-muted-foreground">
-                            <th className="py-1.5 pr-3 font-medium">策略</th>
+                            <th className="py-1.5 pr-3 font-medium">
+                              {rowsAreModels ? "模型" : "策略"}
+                            </th>
                             <th className="py-1.5 pr-3 text-right font-medium">
                               judge
                             </th>
@@ -341,6 +356,24 @@ export function QuestionExplorer() {
                     const passed = found.judgeScore >= threshold;
                     const answerKey = `${item.questionId}::${run.runId}`;
                     const answerOpen = expandedAnswer === answerKey;
+                    /**
+                     * 同一份回答，其它尺子打了多少分。
+                     *
+                     * 多模型对比时每份答案都被所有尺子量了一遍：
+                     * 换把尺子分数就变了，说明这道题的判定本身没那么稳。
+                     */
+                    const otherJudges = (() => {
+                      const row = modelComparison?.rows.find(
+                        (item2) => item2.runId === run.runId,
+                      );
+                      const scores = row?.caseScores.find(
+                        (entry) => entry.questionId === item.questionId,
+                      )?.scores;
+                      if (!scores) return [];
+                      return Object.entries(scores).filter(
+                        ([model]) => model !== modelComparison?.primaryJudge,
+                      );
+                    })();
                     return (
                       <div className="flex min-w-0 flex-col gap-3">
                         <div className="flex flex-wrap items-center gap-2">
@@ -361,6 +394,14 @@ export function QuestionExplorer() {
                             花费 {report.costCurrency}
                             {found.cost.toFixed(4)}
                           </span>
+                          {otherJudges.length > 0 && (
+                            <span className="text-[11px] text-muted-foreground">
+                              同一份回答换尺子：
+                              {otherJudges
+                                .map(([model, score]) => `${model} ${score}/5`)
+                                .join(" · ")}
+                            </span>
+                          )}
                         </div>
 
                         <div className="rounded-md border-l-2 border-chart-1 bg-secondary/50 px-3 py-2">
